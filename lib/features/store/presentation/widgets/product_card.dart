@@ -163,11 +163,12 @@ class ProductCard extends StatelessWidget {
                   width: double.infinity,
                   child: FilledButton(
                     style: FilledButton.styleFrom(
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                       padding: const EdgeInsets.symmetric(
                         horizontal: 8,
-                        vertical: 6,
+                        vertical: 8,
                       ),
-                      minimumSize: const Size.fromHeight(38),
+                      minimumSize: const Size.fromHeight(36),
                     ),
                     onPressed: product.stock == 0 ? null : onAddToCart,
                     child: const Text(

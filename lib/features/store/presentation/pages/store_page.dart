@@ -25,6 +25,16 @@ import '../widgets/order_card.dart';
 import '../widgets/product_card.dart';
 import 'product_detail_page.dart';
 
+/// Pilihan filter status pesanan (value -> label).
+const Map<String, String> _orderStatusFilters = {
+  'all': 'Semua',
+  'pending': 'Belum Bayar',
+  'processing': 'Diproses',
+  'shipping': 'Dikirim',
+  'completed': 'Selesai',
+  'cancelled': 'Dibatalkan',
+};
+
 class StorePage extends StatefulWidget {
   const StorePage({super.key, required this.services, required this.user});
 
@@ -51,6 +61,7 @@ class _StorePageState extends State<StorePage> {
   String _reportPeriod = 'month';
   String _reportValue = DateFormat('yyyy-MM').format(DateTime.now());
   String _orderDateFilter = 'all';
+  String _orderStatusFilter = 'all';
   DateTime? _customFilterDate;
   List<Customer> _customers = const [];
   SalesReport? _report;
@@ -597,7 +608,7 @@ class _StorePageState extends State<StorePage> {
                       fontSize: 16,
                     ),
                   ),
-                  TextButton(
+                  TextButton.icon(
                     onPressed: () {
                       setState(() {
                         _category = entry.key;
@@ -605,7 +616,9 @@ class _StorePageState extends State<StorePage> {
                       });
                       _reloadProducts();
                     },
-                    child: const Text('Semua >'),
+                    iconAlignment: IconAlignment.end,
+                    icon: const Icon(Icons.chevron_right_rounded, size: 18),
+                    label: const Text('Semua'),
                   ),
                 ],
               ),
@@ -814,40 +827,60 @@ class _StorePageState extends State<StorePage> {
   }
 
   Widget _searchBox() => Padding(
-    padding: const EdgeInsets.fromLTRB(18, 0, 18, 14),
+    padding: const EdgeInsets.fromLTRB(18, 16, 18, 14),
     child: Row(
       children: [
         Expanded(
-          child: TextField(
-            controller: _searchController,
-            textInputAction: TextInputAction.search,
-            onSubmitted: (_) => _submitProductSearch(),
-            decoration: InputDecoration(
-              hintText: 'Cari beras, minyak, kebutuhan rumah...',
-              prefixIcon: const Icon(Icons.search_rounded),
-              suffixIcon: _searchController.text.isNotEmpty
-                  ? IconButton(
-                      icon: const Icon(Icons.clear_rounded, size: 20),
-                      onPressed: () {
-                        _searchController.clear();
-                        _search = '';
-                        _submitProductSearch();
-                      },
-                    )
-                  : null,
+          child: SizedBox(
+            height: 48,
+            child: TextField(
+              controller: _searchController,
+              textInputAction: TextInputAction.search,
+              textAlignVertical: TextAlignVertical.center,
+              onSubmitted: (_) => _submitProductSearch(),
+              decoration: InputDecoration(
+                hintText: 'Cari beras, minyak, kebutuhan rumah...',
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 14,
+                  vertical: 12,
+                ),
+                prefixIcon: const Icon(Icons.search_rounded, size: 20),
+                prefixIconConstraints: const BoxConstraints(
+                  minWidth: 44,
+                  minHeight: 44,
+                ),
+                suffixIcon: _searchController.text.isNotEmpty
+                    ? IconButton(
+                        visualDensity: VisualDensity.compact,
+                        iconSize: 18,
+                        icon: const Icon(Icons.clear_rounded),
+                        onPressed: () {
+                          _searchController.clear();
+                          _search = '';
+                          _submitProductSearch();
+                        },
+                      )
+                    : null,
+                suffixIconConstraints: const BoxConstraints(
+                  minWidth: 44,
+                  minHeight: 44,
+                ),
+              ),
             ),
           ),
         ),
         const SizedBox(width: 8),
-        FilledButton(
-          style: FilledButton.styleFrom(
-            padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
-            shape: const RoundedRectangleBorder(
-              borderRadius: AppRadius.controlAll,
+        SizedBox(
+          height: 48,
+          child: FilledButton(
+            style: FilledButton.styleFrom(
+              padding: const EdgeInsets.symmetric(horizontal: 20),
+              minimumSize: const Size(0, 48),
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
             ),
+            onPressed: _submitProductSearch,
+            child: const Text('Cari'),
           ),
-          onPressed: _submitProductSearch,
-          child: const Text('Cari'),
         ),
       ],
     ),
@@ -1043,6 +1076,10 @@ class _StorePageState extends State<StorePage> {
 
         final now = DateTime.now();
         final visibleOrders = state.orders.where((order) {
+          if (_orderStatusFilter != 'all' &&
+              order.status != _orderStatusFilter) {
+            return false;
+          }
           if (_orderDateFilter == 'today') {
             return order.createdAt.year == now.year &&
                 order.createdAt.month == now.month &&
@@ -1124,13 +1161,15 @@ class _StorePageState extends State<StorePage> {
                   }
                 },
               ),
+              const SizedBox(height: 12),
+              _orderStatusChips(),
               const SizedBox(height: 14),
               if (state.error != null) _inlineError(state.error!),
               if (visibleOrders.isEmpty)
                 const Padding(
                   padding: EdgeInsets.all(28),
                   child: Center(
-                    child: Text('Tidak ada pesanan pada rentang waktu ini.'),
+                    child: Text('Tidak ada pesanan untuk filter ini.'),
                   ),
                 )
               else
@@ -1151,7 +1190,35 @@ class _StorePageState extends State<StorePage> {
     );
   }
 
+  /// Chips filter status pesanan; dipakai juga oleh pintasan di tab Akun.
+  Widget _orderStatusChips() {
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      child: Row(
+        children: [
+          for (final entry in _orderStatusFilters.entries) ...[
+            ChoiceChip(
+              label: Text(entry.value),
+              selected: _orderStatusFilter == entry.key,
+              onSelected: (_) =>
+                  setState(() => _orderStatusFilter = entry.key),
+            ),
+            const SizedBox(width: 8),
+          ],
+        ],
+      ),
+    );
+  }
 
+  /// Buka tab Pesanan dengan filter status tertentu (dipakai pintasan Akun).
+  void _openOrdersWithStatus(String status) {
+    setState(() {
+      _orderStatusFilter = status;
+      _tabIndex = 3;
+      _panelError = null;
+    });
+    _reloadOrders();
+  }
 
   Widget _buildCustomers() {
     if (_panelLoading && _customers.isEmpty) {
@@ -1553,9 +1620,7 @@ class _StorePageState extends State<StorePage> {
                 pendingCount,
                 Icons.hourglass_top_rounded,
                 AppColors.warning,
-                () {
-                  setState(() => _tabIndex = 3);
-                },
+                () => _openOrdersWithStatus('pending'),
               ),
             ),
             const SizedBox(width: 8),
@@ -1565,9 +1630,7 @@ class _StorePageState extends State<StorePage> {
                 processingCount,
                 Icons.inventory_2_outlined,
                 AppColors.primary,
-                () {
-                  setState(() => _tabIndex = 3);
-                },
+                () => _openOrdersWithStatus('processing'),
               ),
             ),
           ],
@@ -1581,9 +1644,7 @@ class _StorePageState extends State<StorePage> {
                 shippingCount,
                 Icons.local_shipping_outlined,
                 AppColors.primary,
-                () {
-                  setState(() => _tabIndex = 3);
-                },
+                () => _openOrdersWithStatus('shipping'),
               ),
             ),
             const SizedBox(width: 8),
@@ -1593,9 +1654,7 @@ class _StorePageState extends State<StorePage> {
                 completedCount,
                 Icons.check_circle_outline,
                 AppColors.success,
-                () {
-                  setState(() => _tabIndex = 3);
-                },
+                () => _openOrdersWithStatus('completed'),
               ),
             ),
           ],
@@ -3427,12 +3486,28 @@ class _StorePageState extends State<StorePage> {
   }
 
   Future<void> _openProductDetail(Product product) async {
+    final catalog = _products.state.products;
+    final related = catalog.where((p) => p.id != product.id).toList()
+      ..sort((a, b) {
+        final aSame = a.category == product.category ? 0 : 1;
+        final bSame = b.category == product.category ? 0 : 1;
+        return aSame.compareTo(bSame);
+      });
+
     await Navigator.of(context).push<void>(
       MaterialPageRoute<void>(
         builder: (pageContext) => ProductDetailPage(
           product: product,
           imageUrl: _resolvedImageUrl(product.imageUrl),
           isAdmin: _isAdmin,
+          relatedProducts: related.take(10).toList(),
+          resolveImageUrl: _resolvedImageUrl,
+          quantityOf: (id) => _cart[id] ?? 0,
+          onOpenProduct: _openProductDetail,
+          onQuickAdd: (item) {
+            _addToCart(item);
+            _showMessage('${item.name} ditambahkan ke keranjang.');
+          },
           onAddToCart: () {
             _addToCart(product);
             _showSwalAddToCartSuccess(pageContext, product, () {

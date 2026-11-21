@@ -19,6 +19,8 @@ class OrderMapper {
     totalCents: model.totalCents,
     paymentMethod: model.paymentMethod,
     shippingAddress: model.shippingAddress,
+    shippingFeeCents: model.shippingFeeCents,
+    distanceKm: model.distanceKm,
     status: model.status,
     createdAt: model.createdAt,
     customerName: model.customerName,

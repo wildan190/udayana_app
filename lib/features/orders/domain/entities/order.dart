@@ -8,6 +8,8 @@ class Order {
     required this.createdAt,
     this.customerName = '',
     this.shippingAddress = '',
+    this.shippingFeeCents = 0,
+    this.distanceKm = 0,
     this.midtransResponse = const {},
   });
 
@@ -19,7 +21,11 @@ class Order {
   final DateTime createdAt;
   final String customerName;
   final String shippingAddress;
+  final int shippingFeeCents;
+  final double distanceKm;
   final Map<String, dynamic> midtransResponse;
+
+  int get subtotalCents => totalCents - shippingFeeCents;
 
   String get statusLabel {
     switch (status) {

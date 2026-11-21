@@ -13,11 +13,15 @@ class CheckoutRequested extends OrderEvent {
     this.items, {
     this.paymentMethod = 'COD',
     this.shippingAddress = '',
+    this.city = '',
+    this.district = '',
   });
 
   final List<Map<String, int>> items;
   final String paymentMethod;
   final String shippingAddress;
+  final String city;
+  final String district;
 }
 
 class OrderStatusChangeRequested extends OrderEvent {

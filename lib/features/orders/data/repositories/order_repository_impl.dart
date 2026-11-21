@@ -1,4 +1,5 @@
 import '../../domain/entities/order.dart';
+import '../../domain/entities/shipping.dart';
 import '../../domain/repositories/order_repository.dart';
 import '../datasources/order_remote_data_source.dart';
 import '../mappers/customer_mapper.dart';
@@ -16,12 +17,16 @@ class OrderRepositoryImpl implements OrderRepository {
     List<Map<String, int>> items, {
     String paymentMethod = 'COD',
     String shippingAddress = '',
+    String city = '',
+    String district = '',
   }) async {
     final json =
         await _remoteDataSource.checkout(
               items,
               paymentMethod: paymentMethod,
               shippingAddress: shippingAddress,
+              city: city,
+              district: district,
             )
             as Map<String, dynamic>;
     return OrderMapper.toEntity(OrderModel.fromJson(json));
@@ -136,4 +141,44 @@ class OrderRepositoryImpl implements OrderRepository {
   @override
   Future<void> setDefaultAddress(int id) =>
       _remoteDataSource.setDefaultAddress(id);
+
+  @override
+  Future<ShippingQuote> shippingQuote(String city, String district) async =>
+      ShippingQuote.fromJson(
+        await _remoteDataSource.shippingQuote(city, district),
+      );
+
+  @override
+  Future<ShippingConfig> shippingConfig() async =>
+      ShippingConfig.fromJson(await _remoteDataSource.shippingConfig());
+
+  @override
+  Future<void> updateShippingSettings(Map<String, dynamic> body) =>
+      _remoteDataSource.updateShippingSettings(body);
+
+  @override
+  Future<Map<String, dynamic>> createShippingZone(
+    Map<String, dynamic> body,
+  ) => _remoteDataSource.createShippingZone(body);
+
+  @override
+  Future<void> updateShippingZone(int id, Map<String, dynamic> body) =>
+      _remoteDataSource.updateShippingZone(id, body);
+
+  @override
+  Future<void> deleteShippingZone(int id) =>
+      _remoteDataSource.deleteShippingZone(id);
+
+  @override
+  Future<Map<String, dynamic>> createShippingArea(
+    Map<String, dynamic> body,
+  ) => _remoteDataSource.createShippingArea(body);
+
+  @override
+  Future<void> updateShippingArea(int id, Map<String, dynamic> body) =>
+      _remoteDataSource.updateShippingArea(id, body);
+
+  @override
+  Future<void> deleteShippingArea(int id) =>
+      _remoteDataSource.deleteShippingArea(id);
 }

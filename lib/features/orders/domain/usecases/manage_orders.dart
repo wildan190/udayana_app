@@ -10,10 +10,14 @@ class PlaceOrder {
     List<Map<String, int>> items, {
     String paymentMethod = 'COD',
     String shippingAddress = '',
+    String city = '',
+    String district = '',
   }) => _repository.checkout(
     items,
     paymentMethod: paymentMethod,
     shippingAddress: shippingAddress,
+    city: city,
+    district: district,
   );
 }
 

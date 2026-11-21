@@ -8,6 +8,8 @@ abstract interface class OrderRemoteDataSource {
     List<Map<String, int>> items, {
     String paymentMethod = 'COD',
     String shippingAddress = '',
+    String city = '',
+    String district = '',
   });
   Future<List<dynamic>> orders({required bool admin});
   Future<List<dynamic>> customers();
@@ -37,6 +39,15 @@ abstract interface class OrderRemoteDataSource {
   Future<Map<String, dynamic>> createAddress(Map<String, dynamic> body);
   Future<void> deleteAddress(int id);
   Future<void> setDefaultAddress(int id);
+  Future<Map<String, dynamic>> shippingQuote(String city, String district);
+  Future<Map<String, dynamic>> shippingConfig();
+  Future<void> updateShippingSettings(Map<String, dynamic> body);
+  Future<Map<String, dynamic>> createShippingZone(Map<String, dynamic> body);
+  Future<void> updateShippingZone(int id, Map<String, dynamic> body);
+  Future<void> deleteShippingZone(int id);
+  Future<Map<String, dynamic>> createShippingArea(Map<String, dynamic> body);
+  Future<void> updateShippingArea(int id, Map<String, dynamic> body);
+  Future<void> deleteShippingArea(int id);
 }
 
 class OrderRemoteDataSourceImpl implements OrderRemoteDataSource {
@@ -49,12 +60,16 @@ class OrderRemoteDataSourceImpl implements OrderRemoteDataSource {
     List<Map<String, int>> items, {
     String paymentMethod = 'COD',
     String shippingAddress = '',
+    String city = '',
+    String district = '',
   }) => _api.post(
     '/orders',
     body: {
       'items': items,
       'payment_method': paymentMethod,
       'shipping_address': shippingAddress,
+      'city': city,
+      'district': district,
     },
   );
 
@@ -166,5 +181,50 @@ class OrderRemoteDataSourceImpl implements OrderRemoteDataSource {
   @override
   Future<void> setDefaultAddress(int id) async {
     await _api.patch('/buyer/addresses/$id/default');
+  }
+
+  @override
+  Future<Map<String, dynamic>> shippingQuote(String city, String district) async =>
+      await _api.get(
+            '/shipping/quote',
+            query: {'city': city, 'district': district},
+          )
+          as Map<String, dynamic>;
+
+  @override
+  Future<Map<String, dynamic>> shippingConfig() async =>
+      await _api.get('/admin/shipping') as Map<String, dynamic>;
+
+  @override
+  Future<void> updateShippingSettings(Map<String, dynamic> body) async {
+    await _api.put('/admin/shipping/settings', body: body);
+  }
+
+  @override
+  Future<Map<String, dynamic>> createShippingZone(Map<String, dynamic> body) async =>
+      await _api.post('/admin/shipping/zones', body: body) as Map<String, dynamic>;
+
+  @override
+  Future<void> updateShippingZone(int id, Map<String, dynamic> body) async {
+    await _api.put('/admin/shipping/zones/$id', body: body);
+  }
+
+  @override
+  Future<void> deleteShippingZone(int id) async {
+    await _api.delete('/admin/shipping/zones/$id');
+  }
+
+  @override
+  Future<Map<String, dynamic>> createShippingArea(Map<String, dynamic> body) async =>
+      await _api.post('/admin/shipping/areas', body: body) as Map<String, dynamic>;
+
+  @override
+  Future<void> updateShippingArea(int id, Map<String, dynamic> body) async {
+    await _api.put('/admin/shipping/areas/$id', body: body);
+  }
+
+  @override
+  Future<void> deleteShippingArea(int id) async {
+    await _api.delete('/admin/shipping/areas/$id');
   }
 }

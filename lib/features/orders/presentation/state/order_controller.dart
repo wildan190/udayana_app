@@ -28,6 +28,8 @@ class OrderController extends ChangeNotifier {
         :final items,
         :final paymentMethod,
         :final shippingAddress,
+        :final city,
+        :final district,
       ):
         _state = OrderState(orders: _state.orders, isLoading: true);
         notifyListeners();
@@ -36,6 +38,8 @@ class OrderController extends ChangeNotifier {
             items,
             paymentMethod: paymentMethod,
             shippingAddress: shippingAddress,
+            city: city,
+            district: district,
           );
           _state = OrderState(orders: _state.orders, lastOrder: order);
         } on Exception catch (error) {

@@ -15,6 +15,7 @@ import '../../../auth/presentation/pages/login_page.dart';
 import '../../../auth/presentation/pages/profile_page.dart';
 import '../../../auth/presentation/pages/register_page.dart';
 import '../../../orders/domain/entities/order.dart';
+import '../../../orders/domain/entities/shipping.dart';
 import '../../../orders/presentation/state/order_controller.dart';
 import '../../../orders/presentation/state/order_event.dart';
 import '../../../products/domain/entities/product.dart';
@@ -34,6 +35,37 @@ const Map<String, String> _orderStatusFilters = {
   'completed': 'Selesai',
   'cancelled': 'Dibatalkan',
 };
+
+/// Metode pembayaran yang tersedia.
+class _PaymentMethod {
+  const _PaymentMethod(this.value, this.label, this.description, this.icon);
+
+  final String value;
+  final String label;
+  final String description;
+  final IconData icon;
+}
+
+const List<_PaymentMethod> _paymentMethods = [
+  _PaymentMethod(
+    'COD',
+    'COD (Bayar di Tempat)',
+    'Bayar tunai kepada kurir saat barang tiba di alamat pengiriman.',
+    Icons.payments_rounded,
+  ),
+  _PaymentMethod(
+    'MIDTRANS',
+    'Midtrans Virtual Account (BCA)',
+    'Bayar melalui transfer ATM / M-Banking BCA.',
+    Icons.account_balance_rounded,
+  ),
+  _PaymentMethod(
+    'MIDTRANS_QRIS',
+    'Midtrans QRIS (Scan QR)',
+    'Bayar instan via GoPay, OVO, Dana, ShopeePay, atau M-Banking.',
+    Icons.qr_code_scanner_rounded,
+  ),
+];
 
 class StorePage extends StatefulWidget {
   const StorePage({super.key, required this.services, required this.user});
@@ -72,6 +104,11 @@ class _StorePageState extends State<StorePage> {
   bool _checkoutInProgress = false;
   String _selectedPaymentMethod = 'COD';
   String _selectedShippingAddress = '';
+  String _selectedCity = '';
+  String _selectedDistrict = '';
+  ShippingQuote? _shippingQuote;
+  bool _shippingQuoteLoading = false;
+  ShippingConfig? _shippingConfig;
   late AppUser _user;
 
   bool get _isAdmin => _user.isAdmin;
@@ -95,8 +132,11 @@ class _StorePageState extends State<StorePage> {
     );
     _reloadProducts();
     if (!_isGuest) {
+      _selectedCity = _user.city;
+      _selectedDistrict = _user.district;
       _reloadOrders();
       _loadCartFromBackend();
+      WidgetsBinding.instance.addPostFrameCallback((_) => _refreshShippingQuote());
     }
     if (!_isAdmin) _loadHomeLayout();
   }
@@ -154,14 +194,55 @@ class _StorePageState extends State<StorePage> {
       ? Future<void>.value()
       : _orders.dispatch(LoadOrdersRequested(admin: _isAdmin));
 
+  /// Memuat ulang ongkos kirim untuk kota/kecamatan tujuan yang dipilih.
+  Future<void> _refreshShippingQuote() async {
+    if (_isGuest) return;
+    if (_selectedCity.trim().isEmpty && _selectedDistrict.trim().isEmpty) {
+      if (mounted) setState(() => _shippingQuote = null);
+      return;
+    }
+    if (mounted) setState(() => _shippingQuoteLoading = true);
+    try {
+      final quote = await widget.services.shippingQuote(
+        _selectedCity,
+        _selectedDistrict,
+      );
+      if (!mounted) return;
+      setState(() => _shippingQuote = quote);
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _shippingQuote = null);
+    } finally {
+      if (mounted) setState(() => _shippingQuoteLoading = false);
+    }
+  }
+
+  int get _shippingFeeCents => _shippingQuote?.feeCents ?? 0;
+
+  /// Label ringkas ongkir untuk ditampilkan di keranjang/checkout.
+  String get _shippingFeeLabel {
+    if (_shippingQuoteLoading) return 'Menghitung...';
+    if (_shippingQuote == null) return 'Pilih alamat tujuan';
+    if (_shippingQuote!.distanceKm > 0) {
+      return '${_money(_shippingQuote!.feeCents)} • ${_shippingQuote!.distanceKm.toStringAsFixed(1)} km';
+    }
+    return _money(_shippingQuote!.feeCents);
+  }
+
   List<String> get _tabs => _isAdmin
-      ? const ['Produk', 'Pesanan', 'Pelanggan', 'Laporan']
+      ? const ['Produk', 'Pesanan', 'Pelanggan', 'Laporan', 'Ongkir']
       : _isGuest
       ? const ['Belanja', 'Kategori', 'Keranjang']
       : const ['Belanja', 'Kategori', 'Keranjang', 'Pesanan', 'Akun'];
 
   List<Widget> get _pages => _isAdmin
-      ? [_buildProducts(), _buildOrders(), _buildCustomers(), _buildReports()]
+      ? [
+          _buildProducts(),
+          _buildOrders(),
+          _buildCustomers(),
+          _buildReports(),
+          _buildShippingAdmin(),
+        ]
       : _isGuest
       ? [_buildProducts(), _buildCategoriesTab(), _buildCart()]
       : [
@@ -179,9 +260,11 @@ class _StorePageState extends State<StorePage> {
     });
     if (_isAdmin && index == 2) _loadCustomers();
     if (_isAdmin && index == 3) _loadReport();
+    if (_isAdmin && index == 4) _loadShippingConfig();
     if ((_isAdmin && index == 1) || (!_isAdmin && !_isGuest && index == 3)) {
       _reloadOrders();
     }
+    if (!_isAdmin && !_isGuest && index == 2) _refreshShippingQuote();
     if (_tabIndex == 0) _reloadProducts();
   }
 
@@ -357,6 +440,7 @@ class _StorePageState extends State<StorePage> {
             Icons.receipt_long_outlined,
             Icons.people_outline_rounded,
             Icons.bar_chart_rounded,
+            Icons.local_shipping_outlined,
           ]
         : _isGuest
         ? const [
@@ -918,10 +1002,11 @@ class _StorePageState extends State<StorePage> {
     final items = _knownProducts.values
         .where((product) => (_cart[product.id] ?? 0) > 0)
         .toList();
-    final total = CartMath.total(
+    final subtotal = CartMath.total(
       items.map((item) => item.priceCents).toList(),
       items.map((item) => _cart[item.id]!).toList(),
     );
+    final total = subtotal + _shippingFeeCents;
     if (items.isEmpty) {
       return _emptyPanel(
         'Keranjangmu masih kosong',
@@ -935,42 +1020,18 @@ class _StorePageState extends State<StorePage> {
         _adminHeading('Keranjang belanja'),
         for (final product in items) _cartItem(product),
         const SizedBox(height: 12),
+        _paymentMethodSection(),
+        const SizedBox(height: 12),
         Card(
           child: Padding(
             padding: const EdgeInsets.all(18),
             child: Column(
               children: [
                 _summaryRow('Jumlah barang', '$_cartCount item'),
-                const SizedBox(height: 12),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    const Text('Metode pembayaran'),
-                    DropdownButton<String>(
-                      value: _selectedPaymentMethod,
-                      underline: const SizedBox(),
-                      items: const [
-                        DropdownMenuItem(
-                          value: 'COD',
-                          child: Text('COD (Bayar di Tempat)'),
-                        ),
-                        DropdownMenuItem(
-                          value: 'MIDTRANS',
-                          child: Text('Midtrans VA (BCA)'),
-                        ),
-                        DropdownMenuItem(
-                          value: 'MIDTRANS_QRIS',
-                          child: Text('Midtrans QRIS'),
-                        ),
-                      ],
-                      onChanged: (val) {
-                        if (val != null) {
-                          setState(() => _selectedPaymentMethod = val);
-                        }
-                      },
-                    ),
-                  ],
-                ),
+                const SizedBox(height: 6),
+                _summaryRow('Subtotal', _money(subtotal)),
+                const SizedBox(height: 6),
+                _summaryRow('Ongkos kirim', _shippingFeeLabel),
                 const Divider(height: 24),
                 _summaryRow('Total pembayaran', _money(total), bold: true),
                 const SizedBox(height: 18),
@@ -992,22 +1053,227 @@ class _StorePageState extends State<StorePage> {
     );
   }
 
+  /// Section metode pembayaran: daftar pilihan (bukan dropdown) + "Lihat semua".
+  Widget _paymentMethodSection() {
+    final selected = _selectedPaymentMethodValue;
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Text(
+                  'Metode Pembayaran',
+                  style: TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.textPrimary,
+                  ),
+                ),
+                const Spacer(),
+                TextButton(
+                  onPressed: _showAllPaymentMethods,
+                  child: const Text('Lihat semua'),
+                ),
+              ],
+            ),
+            const SizedBox(height: 4),
+            for (final method in _paymentMethods)
+              _paymentMethodTile(
+                method,
+                selected: selected == method.value,
+                onTap: () => setState(
+                  () => _selectedPaymentMethod = method.value,
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _paymentMethodTile(
+    _PaymentMethod method, {
+    required bool selected,
+    required VoidCallback onTap,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: InkWell(
+        borderRadius: AppRadius.controlAll,
+        onTap: onTap,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+          decoration: BoxDecoration(
+            color: selected ? AppColors.primaryBg : AppColors.container,
+            borderRadius: AppRadius.controlAll,
+            border: Border.all(
+              color: selected ? AppColors.primary : AppColors.border,
+              width: selected ? 1.4 : 1,
+            ),
+          ),
+          child: Row(
+            children: [
+              Icon(
+                method.icon,
+                size: 20,
+                color: selected ? AppColors.primary : AppColors.textSecondary,
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  method.label,
+                  style: TextStyle(
+                    fontSize: 13.5,
+                    fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
+                    color: AppColors.textPrimary,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Icon(
+                selected
+                    ? Icons.check_circle_rounded
+                    : Icons.radio_button_unchecked_rounded,
+                size: 20,
+                color: selected ? AppColors.primary : AppColors.border,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// Bottom sheet berisi seluruh metode pembayaran beserta deskripsinya.
+  void _showAllPaymentMethods() {
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (sheetContext) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 4, 20, 20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Semua Metode Pembayaran',
+                style: Theme.of(sheetContext).textTheme.titleLarge?.copyWith(
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const SizedBox(height: 16),
+              for (final method in _paymentMethods)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 10),
+                  child: InkWell(
+                    borderRadius: AppRadius.cardAll,
+                    onTap: () {
+                      setState(() => _selectedPaymentMethod = method.value);
+                      Navigator.pop(sheetContext);
+                    },
+                    child: Container(
+                      padding: const EdgeInsets.all(14),
+                      decoration: BoxDecoration(
+                        color: AppColors.container,
+                        borderRadius: AppRadius.cardAll,
+                        border: Border.all(
+                          color: _selectedPaymentMethodValue == method.value
+                              ? AppColors.primary
+                              : AppColors.border,
+                        ),
+                      ),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Icon(
+                            method.icon,
+                            size: 22,
+                            color: AppColors.primary,
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  method.label,
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.w600,
+                                    color: AppColors.textPrimary,
+                                  ),
+                                ),
+                                const SizedBox(height: 4),
+                                Text(
+                                  method.description,
+                                  style: const TextStyle(
+                                    fontSize: 12.5,
+                                    color: AppColors.textSecondary,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          if (_selectedPaymentMethodValue == method.value)
+                            const Icon(
+                              Icons.check_circle_rounded,
+                              size: 20,
+                              color: AppColors.primary,
+                            ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  String get _selectedPaymentMethodValue =>
+      _paymentMethods.any((m) => m.value == _selectedPaymentMethod)
+          ? _selectedPaymentMethod
+          : _paymentMethods.first.value;
+
+  _PaymentMethod _methodFor(String value) => _paymentMethods.firstWhere(
+    (m) => m.value == value,
+    orElse: () => _paymentMethods.first,
+  );
+
   Widget _cartItem(Product product) => Card(
     margin: const EdgeInsets.only(bottom: 10),
     child: Padding(
       padding: const EdgeInsets.all(12),
       child: Row(
         children: [
-          Container(
-            width: 56,
-            height: 56,
-            decoration: BoxDecoration(
-              color: AppColors.primaryBg,
-              borderRadius: AppRadius.controlAll,
-            ),
-            child: const Icon(
-              Icons.shopping_basket_outlined,
-              color: AppColors.primary,
+          ClipRRect(
+            borderRadius: AppRadius.controlAll,
+            child: Container(
+              width: 56,
+              height: 56,
+              color: AppColors.fill,
+              child: product.imageUrl.isNotEmpty
+                  ? Image.network(
+                      _resolvedImageUrl(product.imageUrl),
+                      fit: BoxFit.cover,
+                      cacheWidth: 150,
+                      errorBuilder: (_, _, _) => const Icon(
+                        Icons.shopping_basket_outlined,
+                        color: AppColors.textTertiary,
+                        size: 22,
+                      ),
+                    )
+                  : const Icon(
+                      Icons.shopping_basket_outlined,
+                      color: AppColors.primary,
+                      size: 22,
+                    ),
             ),
           ),
           const SizedBox(width: 12),
@@ -1429,6 +1695,624 @@ class _StorePageState extends State<StorePage> {
         ],
       ],
     );
+  }
+
+  Widget _buildShippingAdmin() {
+    final config = _shippingConfig;
+    if (_panelLoading && config == null) {
+      return const Center(child: CircularProgressIndicator());
+    }
+    if (_panelError != null && config == null) {
+      return _errorPanel(_panelError!, _loadShippingConfig);
+    }
+    return RefreshIndicator(
+      onRefresh: _loadShippingConfig,
+      child: ListView(
+        padding: const EdgeInsets.fromLTRB(18, 18, 18, 30),
+        children: [
+          _adminHeading('Ongkos kirim'),
+          if (_panelError != null) _inlineError(_panelError!),
+          _shippingSettingsCard(config?.settings ?? const ShippingSettings()),
+          const SizedBox(height: 16),
+          _shippingZonesCard(config?.zones ?? const []),
+          const SizedBox(height: 16),
+          _shippingAreasCard(config?.areas ?? const []),
+        ],
+      ),
+    );
+  }
+
+  Widget _shippingSectionCard({
+    required String title,
+    required String subtitle,
+    required List<Widget> children,
+    Widget? action,
+  }) => Card(
+    child: Padding(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  title,
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w700,
+                    fontSize: 15,
+                  ),
+                ),
+              ),
+              if (action != null) action,
+            ],
+          ),
+          const SizedBox(height: 6),
+          Text(
+            subtitle,
+            style: const TextStyle(
+              fontSize: 13,
+              color: AppColors.textSecondary,
+            ),
+          ),
+          const SizedBox(height: 12),
+          ...children,
+        ],
+      ),
+    ),
+  );
+
+  Widget _shippingSettingsCard(ShippingSettings settings) => _shippingSectionCard(
+    title: 'Titik asal & tarif bawaan',
+    subtitle:
+        'Tarif bawaan dipakai bila wilayah tujuan belum terdaftar. Koordinat toko hanya perlu diisi kalau mau pakai zona jarak.',
+    action: IconButton(
+      tooltip: 'Ubah pengaturan',
+      onPressed: _editShippingSettings,
+      icon: const Icon(Icons.edit_outlined),
+    ),
+    children: [
+      _shippingInfoRow(
+        'Koordinat asal',
+        settings.originLatitude == 0 && settings.originLongitude == 0
+            ? 'Belum diatur'
+            : '${settings.originLatitude}, ${settings.originLongitude}',
+      ),
+      const SizedBox(height: 6),
+      _shippingInfoRow('Tarif bawaan', _money(settings.defaultFeeCents)),
+    ],
+  );
+
+  Widget _shippingZonesCard(List<ShippingZone> zones) => _shippingSectionCard(
+    title: 'Zona jarak (opsional)',
+    subtitle:
+        'Tarif tetap per rentang jarak (km). Boleh dilewati jika cukup memakai tarif per wilayah.',
+    action: TextButton.icon(
+      onPressed: () => _editShippingZone(),
+      icon: const Icon(Icons.add_rounded),
+      label: const Text('Tambah'),
+    ),
+    children: [
+      if (zones.isEmpty)
+        const Text('Belum ada zona. Ongkir memakai tarif bawaan.')
+      else
+        for (final zone in zones)
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 4),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        zone.name.isEmpty
+                            ? '${zone.minKm.toStringAsFixed(0)} - ${zone.maxKm.toStringAsFixed(0)} km'
+                            : zone.name,
+                        style: const TextStyle(fontWeight: FontWeight.w600),
+                      ),
+                      Text(
+                        '${zone.minKm.toStringAsFixed(1)} - ${zone.maxKm.toStringAsFixed(1)} km · ${_money(zone.feeCents)}',
+                        style: const TextStyle(
+                          fontSize: 12,
+                          color: AppColors.textSecondary,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                IconButton(
+                  tooltip: 'Ubah zona',
+                  onPressed: () => _editShippingZone(zone),
+                  icon: const Icon(Icons.edit_outlined),
+                ),
+                IconButton(
+                  tooltip: 'Hapus zona',
+                  onPressed: () => _deleteShippingZone(zone),
+                  icon: const Icon(Icons.delete_outline),
+                ),
+              ],
+            ),
+          ),
+    ],
+  );
+
+  Widget _shippingAreasCard(List<ShippingArea> areas) => _shippingSectionCard(
+    title: 'Wilayah tujuan',
+    subtitle:
+        'Cukup isi kota/kecamatan dan tarif ongkirnya — tanpa perlu koordinat. Sistem mencocokkan kota & kecamatan yang dipilih pembeli.',
+    action: TextButton.icon(
+      onPressed: () => _editShippingArea(),
+      icon: const Icon(Icons.add_rounded),
+      label: const Text('Tambah'),
+    ),
+    children: [
+      if (areas.isEmpty)
+        const Text('Belum ada wilayah. Tambahkan kota/kecamatan beserta tarif ongkirnya.')
+      else
+        for (final area in areas)
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 4),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        area.district.isEmpty
+                            ? area.city
+                            : '${area.district}, ${area.city}',
+                        style: const TextStyle(fontWeight: FontWeight.w600),
+                      ),
+                      Text(
+                        area.feeCents > 0
+                            ? 'Tarif ${_money(area.feeCents)}'
+                            : 'Tarif belum diatur',
+                        style: const TextStyle(
+                          fontSize: 12,
+                          color: AppColors.textSecondary,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                IconButton(
+                  tooltip: 'Ubah wilayah',
+                  onPressed: () => _editShippingArea(area),
+                  icon: const Icon(Icons.edit_outlined),
+                ),
+                IconButton(
+                  tooltip: 'Hapus wilayah',
+                  onPressed: () => _deleteShippingArea(area),
+                  icon: const Icon(Icons.delete_outline),
+                ),
+              ],
+            ),
+          ),
+    ],
+  );
+
+  Widget _shippingInfoRow(String label, String value) => Row(
+    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+    children: [
+      Text(label, style: const TextStyle(color: AppColors.textSecondary)),
+      Text(value, style: const TextStyle(fontWeight: FontWeight.w600)),
+    ],
+  );
+
+  Future<void> _editShippingSettings() async {
+    final settings = _shippingConfig?.settings ?? const ShippingSettings();
+    final lat = TextEditingController(
+      text: settings.originLatitude == 0
+          ? ''
+          : settings.originLatitude.toString(),
+    );
+    final lng = TextEditingController(
+      text: settings.originLongitude == 0
+          ? ''
+          : settings.originLongitude.toString(),
+    );
+    final fee = TextEditingController(
+      text: (settings.defaultFeeCents / 100).toStringAsFixed(0),
+    );
+    final formKey = GlobalKey<FormState>();
+    final saved = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Pengaturan ongkir'),
+        content: SingleChildScrollView(
+          child: Form(
+            key: formKey,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextFormField(
+                  controller: lat,
+                  keyboardType: const TextInputType.numberWithOptions(
+                    decimal: true,
+                    signed: true,
+                  ),
+                  decoration: const InputDecoration(
+                    labelText: 'Latitude titik asal',
+                    hintText: 'Contoh: -8.6705',
+                  ),
+                ),
+                const SizedBox(height: 12),
+                TextFormField(
+                  controller: lng,
+                  keyboardType: const TextInputType.numberWithOptions(
+                    decimal: true,
+                    signed: true,
+                  ),
+                  decoration: const InputDecoration(
+                    labelText: 'Longitude titik asal',
+                    hintText: 'Contoh: 115.2126',
+                  ),
+                ),
+                const SizedBox(height: 12),
+                TextFormField(
+                  controller: fee,
+                  keyboardType: TextInputType.number,
+                  decoration: const InputDecoration(
+                    labelText: 'Tarif bawaan (Rp)',
+                    hintText: 'Contoh: 10000',
+                  ),
+                  validator: (value) {
+                    final parsed = double.tryParse(value?.trim() ?? '');
+                    if (parsed == null || parsed < 0) return 'Isi tarif yang valid';
+                    return null;
+                  },
+                ),
+              ],
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Batal'),
+          ),
+          FilledButton(
+            onPressed: () {
+              if (formKey.currentState?.validate() ?? false) {
+                Navigator.pop(context, true);
+              }
+            },
+            child: const Text('Simpan'),
+          ),
+        ],
+      ),
+    );
+    if (saved != true) return;
+    try {
+      await widget.services.updateShippingSettings({
+        'origin_latitude': double.tryParse(lat.text.trim()) ?? 0,
+        'origin_longitude': double.tryParse(lng.text.trim()) ?? 0,
+        'default_fee_cents': ((double.tryParse(fee.text.trim()) ?? 0) * 100)
+            .round(),
+      });
+      await _loadShippingConfig();
+      _showMessage('Pengaturan ongkir disimpan.');
+    } on Exception catch (error) {
+      _showMessage('Gagal menyimpan: $error');
+    }
+  }
+
+  Future<void> _editShippingZone([ShippingZone? zone]) async {
+    final name = TextEditingController(text: zone?.name ?? '');
+    final minKm = TextEditingController(
+      text: zone == null ? '' : zone.minKm.toStringAsFixed(1),
+    );
+    final maxKm = TextEditingController(
+      text: zone == null ? '' : zone.maxKm.toStringAsFixed(1),
+    );
+    final fee = TextEditingController(
+      text: zone == null ? '' : (zone.feeCents / 100).toStringAsFixed(0),
+    );
+    final formKey = GlobalKey<FormState>();
+    final saved = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(zone == null ? 'Tambah zona' : 'Ubah zona'),
+        content: SingleChildScrollView(
+          child: Form(
+            key: formKey,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextFormField(
+                  controller: name,
+                  decoration: const InputDecoration(
+                    labelText: 'Nama zona (opsional)',
+                    hintText: 'Contoh: Dalam kota',
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Row(
+                  children: [
+                    Expanded(
+                      child: TextFormField(
+                        controller: minKm,
+                        keyboardType: const TextInputType.numberWithOptions(
+                          decimal: true,
+                        ),
+                        decoration: const InputDecoration(labelText: 'Dari (km)'),
+                        validator: _numberValidator,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: TextFormField(
+                        controller: maxKm,
+                        keyboardType: const TextInputType.numberWithOptions(
+                          decimal: true,
+                        ),
+                        decoration:
+                            const InputDecoration(labelText: 'Sampai (km)'),
+                        validator: _numberValidator,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                TextFormField(
+                  controller: fee,
+                  keyboardType: TextInputType.number,
+                  decoration: const InputDecoration(labelText: 'Tarif (Rp)'),
+                  validator: _numberValidator,
+                ),
+              ],
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Batal'),
+          ),
+          FilledButton(
+            onPressed: () {
+              if (formKey.currentState?.validate() ?? false) {
+                Navigator.pop(context, true);
+              }
+            },
+            child: const Text('Simpan'),
+          ),
+        ],
+      ),
+    );
+    if (saved != true) return;
+    final body = {
+      'name': name.text.trim(),
+      'min_km': double.tryParse(minKm.text.trim()) ?? 0,
+      'max_km': double.tryParse(maxKm.text.trim()) ?? 0,
+      'fee_cents': ((double.tryParse(fee.text.trim()) ?? 0) * 100).round(),
+    };
+    try {
+      if (zone == null) {
+        await widget.services.createShippingZone(body);
+      } else {
+        await widget.services.updateShippingZone(zone.id, body);
+      }
+      await _loadShippingConfig();
+      _showMessage('Zona ongkir disimpan.');
+    } on Exception catch (error) {
+      _showMessage('Gagal menyimpan: $error');
+    }
+  }
+
+  Future<void> _deleteShippingZone(ShippingZone zone) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Hapus zona?'),
+        content: Text(
+          zone.name.isEmpty
+              ? 'Zona ${zone.minKm.toStringAsFixed(1)} - ${zone.maxKm.toStringAsFixed(1)} km akan dihapus.'
+              : 'Zona "${zone.name}" akan dihapus.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Batal'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Hapus'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    try {
+      await widget.services.deleteShippingZone(zone.id);
+      await _loadShippingConfig();
+      _showMessage('Zona ongkir dihapus.');
+    } on Exception catch (error) {
+      _showMessage('Gagal menghapus: $error');
+    }
+  }
+
+  Future<void> _editShippingArea([ShippingArea? area]) async {
+    final city = TextEditingController(text: area?.city ?? '');
+    final district = TextEditingController(text: area?.district ?? '');
+    final lat = TextEditingController(
+      text: area == null || area.latitude == 0 ? '' : area.latitude.toString(),
+    );
+    final lng = TextEditingController(
+      text: area == null || area.longitude == 0
+          ? ''
+          : area.longitude.toString(),
+    );
+    final fee = TextEditingController(
+      text: area == null || area.feeCents == 0
+          ? ''
+          : (area.feeCents / 100).toStringAsFixed(0),
+    );
+    final formKey = GlobalKey<FormState>();
+    final saved = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(area == null ? 'Tambah wilayah' : 'Ubah wilayah'),
+        content: SingleChildScrollView(
+          child: Form(
+            key: formKey,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextFormField(
+                  controller: city,
+                  decoration: const InputDecoration(labelText: 'Kota/Kabupaten'),
+                  validator: (value) => (value?.trim().isEmpty ?? true)
+                      ? 'Kota wajib diisi'
+                      : null,
+                ),
+                const SizedBox(height: 12),
+                TextFormField(
+                  controller: district,
+                  decoration: const InputDecoration(labelText: 'Kecamatan'),
+                  validator: (value) => (value?.trim().isEmpty ?? true)
+                      ? 'Kecamatan wajib diisi'
+                      : null,
+                ),
+                const SizedBox(height: 12),
+                TextFormField(
+                  controller: fee,
+                  keyboardType: TextInputType.number,
+                  decoration: const InputDecoration(
+                    labelText: 'Tarif ongkir (Rp)',
+                    hintText: 'Contoh: 15000',
+                  ),
+                  validator: (value) {
+                    final text = value?.trim() ?? '';
+                    if (text.isEmpty) return 'Tarif wajib diisi';
+                    final parsed = double.tryParse(text);
+                    if (parsed == null || parsed < 0) {
+                      return 'Isi tarif yang valid';
+                    }
+                    return null;
+                  },
+                ),
+                const SizedBox(height: 16),
+                const Text(
+                  'Koordinat (opsional) — isi hanya jika memakai zona jarak.',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: AppColors.textSecondary,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                TextFormField(
+                  controller: lat,
+                  keyboardType: const TextInputType.numberWithOptions(
+                    decimal: true,
+                    signed: true,
+                  ),
+                  decoration: const InputDecoration(
+                    labelText: 'Latitude (opsional)',
+                    hintText: 'Contoh: -8.6500',
+                  ),
+                  validator: _optionalNumberValidator,
+                ),
+                const SizedBox(height: 12),
+                TextFormField(
+                  controller: lng,
+                  keyboardType: const TextInputType.numberWithOptions(
+                    decimal: true,
+                    signed: true,
+                  ),
+                  decoration: const InputDecoration(
+                    labelText: 'Longitude (opsional)',
+                    hintText: 'Contoh: 115.2167',
+                  ),
+                  validator: _optionalNumberValidator,
+                ),
+              ],
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Batal'),
+          ),
+          FilledButton(
+            onPressed: () {
+              if (formKey.currentState?.validate() ?? false) {
+                Navigator.pop(context, true);
+              }
+            },
+            child: const Text('Simpan'),
+          ),
+        ],
+      ),
+    );
+    if (saved != true) return;
+    final body = {
+      'city': city.text.trim(),
+      'district': district.text.trim(),
+      'fee_cents': ((double.tryParse(fee.text.trim()) ?? 0) * 100).round(),
+      'latitude': double.tryParse(lat.text.trim()) ?? 0,
+      'longitude': double.tryParse(lng.text.trim()) ?? 0,
+    };
+    try {
+      if (area == null) {
+        await widget.services.createShippingArea(body);
+      } else {
+        await widget.services.updateShippingArea(area.id, body);
+      }
+      await _loadShippingConfig();
+      _showMessage('Wilayah ongkir disimpan.');
+    } on Exception catch (error) {
+      _showMessage('Gagal menyimpan: $error');
+    }
+  }
+
+  Future<void> _deleteShippingArea(ShippingArea area) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Hapus wilayah?'),
+        content: Text(
+          area.district.isEmpty
+              ? 'Wilayah "${area.city}" akan dihapus.'
+              : 'Wilayah "${area.district}, ${area.city}" akan dihapus.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Batal'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Hapus'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    try {
+      await widget.services.deleteShippingArea(area.id);
+      await _loadShippingConfig();
+      _showMessage('Wilayah ongkir dihapus.');
+    } on Exception catch (error) {
+      _showMessage('Gagal menghapus: $error');
+    }
+  }
+
+  String? _numberValidator(String? value) {
+    final parsed = double.tryParse(value?.trim() ?? '');
+    if (parsed == null || parsed < 0) return 'Isi angka yang valid';
+    return null;
+  }
+
+  String? _optionalNumberValidator(String? value) {
+    final text = value?.trim() ?? '';
+    if (text.isEmpty) return null;
+    final parsed = double.tryParse(text);
+    if (parsed == null || parsed < 0) return 'Isi angka yang valid';
+    return null;
   }
 
   Widget _metricCard(String title, String value, IconData icon) => Card(
@@ -2099,8 +2983,13 @@ class _StorePageState extends State<StorePage> {
                                       setState(() {
                                         _selectedShippingAddress =
                                             '$fullAddr [Penerima: ${addr['recipient_name']} - ${addr['phone']}]';
+                                        _selectedCity = (addr['city'] ?? '')
+                                            .toString();
+                                        _selectedDistrict =
+                                            (addr['district'] ?? '').toString();
                                       });
                                       Navigator.pop(context);
+                                      _refreshShippingQuote();
                                     },
                                     child: const Text('Pilih'),
                                   ),
@@ -2460,9 +3349,22 @@ class _StorePageState extends State<StorePage> {
     if (_selectedShippingAddress.isEmpty) {
       _selectedShippingAddress = _user.formattedAddress;
     }
+    if (_selectedCity.isEmpty && _selectedDistrict.isEmpty) {
+      _selectedCity = _user.city;
+      _selectedDistrict = _user.district;
+    }
 
     setState(() => _checkoutInProgress = true);
     try {
+      await _refreshShippingQuote();
+      if (!mounted) return;
+      final subtotal = CartMath.total(
+        items
+            .map((item) => _knownProducts[item['product_id']]?.priceCents ?? 0)
+            .toList(),
+        items.map((item) => item['quantity']!).toList(),
+      );
+      final total = subtotal + _shippingFeeCents;
       String selectedPaymentMethod = _selectedPaymentMethod;
       final confirm = await showModalBottomSheet<bool>(
         context: context,
@@ -2533,98 +3435,65 @@ class _StorePageState extends State<StorePage> {
                   ),
                   const SizedBox(height: 8),
                   Container(
+                    padding: const EdgeInsets.all(12),
                     decoration: BoxDecoration(
-                      border: Border.all(
-                        color: selectedPaymentMethod == 'COD'
-                            ? AppColors.primary
-                            : AppColors.border,
-                        width: selectedPaymentMethod == 'COD' ? 1.5 : 1,
-                      ),
+                      color: AppColors.fill,
                       borderRadius: AppRadius.cardAll,
+                      border: Border.all(color: AppColors.border),
                     ),
-                    child: RadioListTile<String>(
-                      value: 'COD',
-                      groupValue: selectedPaymentMethod,
-                      onChanged: (value) {
-                        if (value != null) {
-                          setModalState(() => selectedPaymentMethod = value);
-                        }
-                      },
-                      title: const Text(
-                        'COD (Bayar di Tempat)',
-                        style: TextStyle(fontWeight: FontWeight.bold),
-                      ),
-                      subtitle: const Text(
-                        'Bayar tunai kepada kurir saat barang sampai di alamat pengiriman.',
-                      ),
-                      secondary: const Icon(
-                        Icons.payments_rounded,
-                        color: AppColors.primary,
-                      ),
+                    child: Row(
+                      children: [
+                        Icon(
+                          _methodFor(selectedPaymentMethod).icon,
+                          size: 20,
+                          color: AppColors.primary,
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                _methodFor(selectedPaymentMethod).label,
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w600,
+                                  color: AppColors.textPrimary,
+                                ),
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                _methodFor(selectedPaymentMethod).description,
+                                style: const TextStyle(
+                                  fontSize: 12.5,
+                                  color: AppColors.textSecondary,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
                     ),
                   ),
-                  const SizedBox(height: 10),
+                  const SizedBox(height: 14),
                   Container(
+                    padding: const EdgeInsets.all(12),
                     decoration: BoxDecoration(
-                      border: Border.all(
-                        color: selectedPaymentMethod == 'MIDTRANS'
-                            ? AppColors.primary
-                            : AppColors.border,
-                        width: selectedPaymentMethod == 'MIDTRANS' ? 1.5 : 1,
-                      ),
+                      color: AppColors.fill,
                       borderRadius: AppRadius.cardAll,
+                      border: Border.all(color: AppColors.border),
                     ),
-                    child: RadioListTile<String>(
-                      value: 'MIDTRANS',
-                      groupValue: selectedPaymentMethod,
-                      onChanged: (value) {
-                        if (value != null) {
-                          setModalState(() => selectedPaymentMethod = value);
-                        }
-                      },
-                      title: const Text(
-                        'Midtrans Virtual Account (BCA)',
-                        style: TextStyle(fontWeight: FontWeight.bold),
-                      ),
-                      subtitle: const Text(
-                        'Bayar melalui transfer ATM / M-Banking BCA.',
-                      ),
-                      secondary: const Icon(
-                        Icons.credit_card_rounded,
-                        color: AppColors.primary,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 10),
-                  Container(
-                    decoration: BoxDecoration(
-                      border: Border.all(
-                        color: selectedPaymentMethod == 'MIDTRANS_QRIS'
-                            ? AppColors.primary
-                            : AppColors.border,
-                        width: selectedPaymentMethod == 'MIDTRANS_QRIS' ? 1.5 : 1,
-                      ),
-                      borderRadius: AppRadius.cardAll,
-                    ),
-                    child: RadioListTile<String>(
-                      value: 'MIDTRANS_QRIS',
-                      groupValue: selectedPaymentMethod,
-                      onChanged: (value) {
-                        if (value != null) {
-                          setModalState(() => selectedPaymentMethod = value);
-                        }
-                      },
-                      title: const Text(
-                        'Midtrans QRIS (Scan QR)',
-                        style: TextStyle(fontWeight: FontWeight.bold),
-                      ),
-                      subtitle: const Text(
-                        'Bayar instan via GoPay, OVO, Dana, ShopeePay, atau M-Banking.',
-                      ),
-                      secondary: const Icon(
-                        Icons.qr_code_scanner_rounded,
-                        color: AppColors.primary,
-                      ),
+                    child: Column(
+                      children: [
+                        _summaryRow('Subtotal', _money(subtotal)),
+                        const SizedBox(height: 6),
+                        _summaryRow('Ongkos kirim', _shippingFeeLabel),
+                        const Divider(height: 20),
+                        _summaryRow(
+                          'Total pembayaran',
+                          _money(total),
+                          bold: true,
+                        ),
+                      ],
                     ),
                   ),
                   const SizedBox(height: 20),
@@ -2655,6 +3524,8 @@ class _StorePageState extends State<StorePage> {
           shippingAddress: _selectedShippingAddress.isNotEmpty
               ? _selectedShippingAddress
               : _user.formattedAddress,
+          city: _selectedCity,
+          district: _selectedDistrict,
         ),
       );
       if (!mounted) return;
@@ -3126,6 +3997,27 @@ class _StorePageState extends State<StorePage> {
       if (!mounted) return;
       setState(() {
         _report = report;
+        _panelLoading = false;
+      });
+    } on Exception catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _panelError = error.toString();
+        _panelLoading = false;
+      });
+    }
+  }
+
+  Future<void> _loadShippingConfig() async {
+    setState(() {
+      _panelLoading = true;
+      _panelError = null;
+    });
+    try {
+      final config = await widget.services.loadShippingConfig();
+      if (!mounted) return;
+      setState(() {
+        _shippingConfig = config;
         _panelLoading = false;
       });
     } on Exception catch (error) {

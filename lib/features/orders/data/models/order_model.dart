@@ -9,6 +9,8 @@ class OrderModel {
     required this.createdAt,
     required this.customerName,
     required this.midtransResponse,
+    this.shippingFeeCents = 0,
+    this.distanceKm = 0,
   });
 
   final int id;
@@ -20,6 +22,8 @@ class OrderModel {
   final DateTime createdAt;
   final String customerName;
   final Map<String, dynamic> midtransResponse;
+  final int shippingFeeCents;
+  final double distanceKm;
 
   factory OrderModel.fromJson(Map<String, dynamic> json) => OrderModel(
     id: (json['id'] as num).toInt(),
@@ -37,6 +41,8 @@ class OrderModel {
         (json['customer'] as Map<String, dynamic>?)?['name'] as String? ?? '',
     midtransResponse:
         json['midtrans_response'] as Map<String, dynamic>? ?? const {},
+    shippingFeeCents: (json['shipping_fee_cents'] as num? ?? 0).toInt(),
+    distanceKm: (json['distance_km'] as num? ?? 0).toDouble(),
   );
 }
 

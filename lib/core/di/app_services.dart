@@ -8,6 +8,7 @@ import '../../features/auth/domain/usecases/sign_in.dart';
 import '../../features/auth/domain/usecases/update_buyer_address.dart';
 import '../../features/orders/data/datasources/order_remote_data_source.dart';
 import '../../features/orders/data/repositories/order_repository_impl.dart';
+import '../../features/orders/domain/entities/shipping.dart';
 import '../../features/orders/domain/usecases/manage_orders.dart';
 import '../../features/products/data/datasources/product_remote_data_source.dart';
 import '../../features/products/data/repositories/product_repository_impl.dart';
@@ -51,6 +52,15 @@ class AppServices {
     createAddress = orderRepository.createAddress;
     deleteAddress = orderRepository.deleteAddress;
     setDefaultAddress = orderRepository.setDefaultAddress;
+    shippingQuote = orderRepository.shippingQuote;
+    loadShippingConfig = orderRepository.shippingConfig;
+    updateShippingSettings = orderRepository.updateShippingSettings;
+    createShippingZone = orderRepository.createShippingZone;
+    updateShippingZone = orderRepository.updateShippingZone;
+    deleteShippingZone = orderRepository.deleteShippingZone;
+    createShippingArea = orderRepository.createShippingArea;
+    updateShippingArea = orderRepository.updateShippingArea;
+    deleteShippingArea = orderRepository.deleteShippingArea;
     loadHomeLayout = LoadHomeLayout(homeLayoutRepository);
   }
 
@@ -83,5 +93,20 @@ class AppServices {
   late final Future<Map<String, dynamic>> Function(Map<String, dynamic>) createAddress;
   late final Future<void> Function(int) deleteAddress;
   late final Future<void> Function(int) setDefaultAddress;
+  late final Future<ShippingQuote> Function(String city, String district)
+  shippingQuote;
+  late final Future<ShippingConfig> Function() loadShippingConfig;
+  late final Future<void> Function(Map<String, dynamic> body)
+  updateShippingSettings;
+  late final Future<Map<String, dynamic>> Function(Map<String, dynamic> body)
+  createShippingZone;
+  late final Future<void> Function(int id, Map<String, dynamic> body)
+  updateShippingZone;
+  late final Future<void> Function(int id) deleteShippingZone;
+  late final Future<Map<String, dynamic>> Function(Map<String, dynamic> body)
+  createShippingArea;
+  late final Future<void> Function(int id, Map<String, dynamic> body)
+  updateShippingArea;
+  late final Future<void> Function(int id) deleteShippingArea;
   late final LoadHomeLayout loadHomeLayout;
 }

@@ -17,31 +17,14 @@ class MidtransDialog {
       } catch (_) {}
     }
     final isQris = order.paymentMethod == 'MIDTRANS_QRIS';
-    if (resp.isEmpty) {
-      resp = isQris
-          ? {
-              'status_message': 'Menunggu pembayaran QRIS',
-              'qr_string':
-                  '00020101021226680016ID.CO.QRIS.WWW011893600914300000000053033605802ID5910Udayana6005Bali6304',
-            }
-          : {
-              'status_message': 'Menunggu pembayaran Virtual Account',
-              'va_numbers': [
-                {
-                  'bank': 'bca',
-                  'va_number': '828000${order.id.toString().padLeft(8, '0')}',
-                },
-              ],
-            };
-    }
 
     final vaNumbers = resp['va_numbers'] as List<dynamic>?;
     final vaNumber = vaNumbers != null && vaNumbers.isNotEmpty
         ? (vaNumbers.first as Map<String, dynamic>)['va_number']?.toString()
-        : '828000${order.id.toString().padLeft(8, '0')}';
+        : null;
     final bank = vaNumbers != null && vaNumbers.isNotEmpty
         ? (vaNumbers.first as Map<String, dynamic>)['bank']?.toString()
-        : 'bca';
+        : null;
 
     final actions = resp['actions'] as List<dynamic>?;
     final qrAction = actions?.firstWhere(
@@ -49,9 +32,7 @@ class MidtransDialog {
       orElse: () => null,
     ) as Map<String, dynamic>?;
     final qrUrl = qrAction?['url'] as String?;
-    final qrString =
-        resp['qr_string'] as String? ??
-        '00020101021226680016ID.CO.QRIS.WWW011893600914300000000053033605802ID5910Udayana6005Bali6304';
+    final qrString = resp['qr_string'] as String?;
 
     final itemSummary = order.items
         .map((item) => '${item.quantity}x ${item.productName}')
@@ -120,7 +101,7 @@ class MidtransDialog {
                       ),
                     ),
                   )
-                else
+                else if (qrString != null)
                   Center(
                     child: Container(
                       padding: const EdgeInsets.all(14),
@@ -148,6 +129,10 @@ class MidtransDialog {
                         ],
                       ),
                     ),
+                  )
+                else
+                  const Text(
+                    'Detail QRIS belum tersedia. Pembayaran sedang disiapkan oleh Midtrans, silakan coba lagi sebentar lagi.',
                   ),
               ] else ...[
                 Text(
@@ -155,57 +140,56 @@ class MidtransDialog {
                   style: const TextStyle(fontWeight: FontWeight.w600),
                 ),
                 const SizedBox(height: 12),
-                Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: Theme.of(context)
-                        .colorScheme
-                        .primaryContainer
-                        .withValues(alpha: 0.3),
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(
+                if (vaNumber != null)
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
                       color: Theme.of(context)
                           .colorScheme
-                          .primary
+                          .primaryContainer
                           .withValues(alpha: 0.3),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                        color: Theme.of(context)
+                            .colorScheme
+                            .primary
+                            .withValues(alpha: 0.3),
+                      ),
                     ),
-                  ),
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: SelectableText(
-                          vaNumber ??
-                              '828000${order.id.toString().padLeft(8, '0')}',
-                          style: TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.w800,
-                            color: Theme.of(context).colorScheme.primary,
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: SelectableText(
+                            vaNumber,
+                            style: TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.w800,
+                              color: Theme.of(context).colorScheme.primary,
+                            ),
                           ),
                         ),
-                      ),
-                      IconButton.filledTonal(
-                        tooltip: 'Salin No. VA',
-                        icon: const Icon(Icons.copy_rounded, size: 20),
-                        onPressed: () {
-                          final numberToCopy =
-                              vaNumber ??
-                              '828000${order.id.toString().padLeft(8, '0')}';
-                          Clipboard.setData(
-                            ClipboardData(text: numberToCopy),
-                          );
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                              content: Text(
-                                'Nomor Virtual Account berhasil disalin!',
+                        IconButton.filledTonal(
+                          tooltip: 'Salin No. VA',
+                          icon: const Icon(Icons.copy_rounded, size: 20),
+                          onPressed: () {
+                            Clipboard.setData(ClipboardData(text: vaNumber));
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text(
+                                  'Nomor Virtual Account berhasil disalin!',
+                                ),
+                                duration: Duration(seconds: 2),
                               ),
-                              duration: Duration(seconds: 2),
-                            ),
-                          );
-                        },
-                      ),
-                    ],
+                            );
+                          },
+                        ),
+                      ],
+                    ),
+                  )
+                else
+                  const Text(
+                    'Nomor Virtual Account belum tersedia. Silakan muat ulang atau hubungi penjual.',
                   ),
-                ),
               ],
             ],
           ),

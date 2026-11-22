@@ -33,6 +33,10 @@ abstract interface class OrderRepository {
   });
   Future<Map<String, dynamic>> getPaymentDetails(int orderId);
   Future<void> simulatePayment(int orderId);
+  Future<void> updateBankAccount(Map<String, dynamic> body);
+  Future<void> requestCancellation(int orderId, Map<String, dynamic> body);
+  Future<void> approveCancellation(int orderId);
+  Future<void> rejectCancellation(int orderId);
   Future<List<Map<String, dynamic>>> listAddresses();
   Future<Map<String, dynamic>> createAddress(Map<String, dynamic> body);
   Future<void> deleteAddress(int id);

@@ -12,6 +12,9 @@ class OrderCard extends StatelessWidget {
     required this.onBuyAgain,
     required this.onUpdateStatus,
     required this.onSimulatePayment,
+    required this.onRequestCancellation,
+    required this.onApproveCancellation,
+    required this.onRejectCancellation,
   });
 
   final Order order;
@@ -21,6 +24,9 @@ class OrderCard extends StatelessWidget {
   final VoidCallback onBuyAgain;
   final ValueChanged<String> onUpdateStatus;
   final VoidCallback onSimulatePayment;
+  final VoidCallback onRequestCancellation;
+  final VoidCallback onApproveCancellation;
+  final VoidCallback onRejectCancellation;
 
   @override
   Widget build(BuildContext context) {
@@ -39,7 +45,8 @@ class OrderCard extends StatelessWidget {
                     style: const TextStyle(fontWeight: FontWeight.w700),
                   ),
                 ),
-                _buildStatusChip(order.status),
+                const SizedBox(width: 8),
+                Flexible(child: _buildStatusChip(order.status)),
               ],
             ),
             if (isAdmin && order.customerName.isNotEmpty) ...[
@@ -131,6 +138,104 @@ class OrderCard extends StatelessWidget {
                 ),
               ),
             ],
+            if (!isAdmin &&
+                (order.status == 'pending' || order.status == 'processing')) ...[
+              const SizedBox(height: 8),
+              OutlinedButton.icon(
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: AppColors.error,
+                  side: const BorderSide(color: AppColors.error),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  padding: const EdgeInsets.symmetric(
+                    vertical: 8,
+                    horizontal: 12,
+                  ),
+                  minimumSize: const Size.fromHeight(36),
+                ),
+                onPressed: onRequestCancellation,
+                icon: const Icon(Icons.cancel_outlined, size: 16),
+                label: const Text('Batalkan Pesanan & Refund'),
+              ),
+            ],
+            if (!isAdmin && order.status == 'cancellation_requested') ...[
+              const SizedBox(height: 8),
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: Colors.orange.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Permintaan pembatalan & refund sedang menunggu persetujuan admin.',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Colors.orange,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    if (order.cancellationReason.isNotEmpty)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 4),
+                        child: Text(
+                          'Alasan: ${order.cancellationReason}',
+                          style: const TextStyle(fontSize: 12, color: AppColors.textSecondary),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            ],
+            if (isAdmin && order.status == 'cancellation_requested') ...[
+              const SizedBox(height: 10),
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: Colors.deepOrange.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Alasan Batal: ${order.cancellationReason.isNotEmpty ? order.cancellationReason : "-"}',
+                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
+                    ),
+                    if (order.refundAccountNumber.isNotEmpty)
+                      Text(
+                        'Rekening Refund: ${order.refundBankName.toUpperCase()} - ${order.refundAccountNumber} a.n. ${order.refundAccountName}',
+                        style: const TextStyle(fontSize: 12, color: AppColors.textSecondary),
+                      ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 10),
+              Row(
+                children: [
+                  Expanded(
+                    child: FilledButton(
+                      style: FilledButton.styleFrom(
+                        backgroundColor: AppColors.error,
+                        foregroundColor: Colors.white,
+                      ),
+                      onPressed: onApproveCancellation,
+                      child: const Text('Setujui Batal & Refund (IRIS)'),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: OutlinedButton(
+                      onPressed: onRejectCancellation,
+                      child: const Text('Tolak'),
+                    ),
+                  ),
+                ],
+              ),
+            ],
             const SizedBox(height: 10),
             Row(
               children: [
@@ -183,7 +288,8 @@ class OrderCard extends StatelessWidget {
                             ],
                           ),
                         ),
-                      if (order.status == 'pending' || order.status == 'processing')
+                      if (order.status == 'pending' ||
+                          order.status == 'processing')
                         const PopupMenuItem(
                           value: 'shipping',
                           child: Row(
@@ -194,7 +300,8 @@ class OrderCard extends StatelessWidget {
                             ],
                           ),
                         ),
-                      if (order.status != 'completed' && order.status != 'cancelled')
+                      if (order.status != 'completed' &&
+                          order.status != 'cancelled')
                         const PopupMenuItem(
                           value: 'completed',
                           child: Row(
@@ -205,14 +312,22 @@ class OrderCard extends StatelessWidget {
                             ],
                           ),
                         ),
-                      if (order.status != 'completed' && order.status != 'cancelled')
+                      if (order.status != 'completed' &&
+                          order.status != 'cancelled')
                         const PopupMenuItem(
                           value: 'cancelled',
                           child: Row(
                             children: [
-                              Icon(Icons.cancel_outlined, size: 18, color: Colors.red),
+                              Icon(
+                                Icons.cancel_outlined,
+                                size: 18,
+                                color: Colors.red,
+                              ),
                               SizedBox(width: 8),
-                              Text('Batalkan pesanan', style: TextStyle(color: Colors.red)),
+                              Text(
+                                'Batalkan pesanan',
+                                style: TextStyle(color: Colors.red),
+                              ),
                             ],
                           ),
                         ),
@@ -233,6 +348,7 @@ class OrderCard extends StatelessWidget {
       'shipping' => ('Dikirim', AppColors.primary),
       'completed' => ('Selesai', AppColors.success),
       'cancelled' => ('Dibatalkan', AppColors.error),
+      'cancellation_requested' => ('Pengajuan Batal', Colors.deepOrange),
       _ => ('Menunggu Pembayaran', AppColors.textTertiary),
     };
     return Container(
@@ -243,6 +359,8 @@ class OrderCard extends StatelessWidget {
       ),
       child: Text(
         label,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
         style: TextStyle(
           color: color,
           fontSize: 11,

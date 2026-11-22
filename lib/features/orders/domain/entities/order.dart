@@ -11,6 +11,11 @@ class Order {
     this.shippingFeeCents = 0,
     this.distanceKm = 0,
     this.midtransResponse = const {},
+    this.cancellationReason = '',
+    this.refundBankName = '',
+    this.refundAccountName = '',
+    this.refundAccountNumber = '',
+    this.irisPayoutReference = '',
   });
 
   final int id;
@@ -24,6 +29,11 @@ class Order {
   final int shippingFeeCents;
   final double distanceKm;
   final Map<String, dynamic> midtransResponse;
+  final String cancellationReason;
+  final String refundBankName;
+  final String refundAccountName;
+  final String refundAccountNumber;
+  final String irisPayoutReference;
 
   int get subtotalCents => totalCents - shippingFeeCents;
 
@@ -39,6 +49,8 @@ class Order {
         return 'Selesai';
       case 'cancelled':
         return 'Dibatalkan';
+      case 'cancellation_requested':
+        return 'Pengajuan Batal';
       default:
         return status;
     }

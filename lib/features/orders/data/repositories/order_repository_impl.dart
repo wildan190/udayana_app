@@ -126,6 +126,22 @@ class OrderRepositoryImpl implements OrderRepository {
       _remoteDataSource.simulatePayment(orderId);
 
   @override
+  Future<void> updateBankAccount(Map<String, dynamic> body) =>
+      _remoteDataSource.updateBankAccount(body);
+
+  @override
+  Future<void> requestCancellation(int orderId, Map<String, dynamic> body) =>
+      _remoteDataSource.requestCancellation(orderId, body);
+
+  @override
+  Future<void> approveCancellation(int orderId) =>
+      _remoteDataSource.approveCancellation(orderId);
+
+  @override
+  Future<void> rejectCancellation(int orderId) =>
+      _remoteDataSource.rejectCancellation(orderId);
+
+  @override
   Future<List<Map<String, dynamic>>> listAddresses() async =>
       (await _remoteDataSource.listAddresses())
           .map((item) => item as Map<String, dynamic>)

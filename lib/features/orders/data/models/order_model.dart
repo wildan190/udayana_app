@@ -11,6 +11,11 @@ class OrderModel {
     required this.midtransResponse,
     this.shippingFeeCents = 0,
     this.distanceKm = 0,
+    this.cancellationReason = '',
+    this.refundBankName = '',
+    this.refundAccountName = '',
+    this.refundAccountNumber = '',
+    this.irisPayoutReference = '',
   });
 
   final int id;
@@ -24,6 +29,11 @@ class OrderModel {
   final Map<String, dynamic> midtransResponse;
   final int shippingFeeCents;
   final double distanceKm;
+  final String cancellationReason;
+  final String refundBankName;
+  final String refundAccountName;
+  final String refundAccountNumber;
+  final String irisPayoutReference;
 
   factory OrderModel.fromJson(Map<String, dynamic> json) => OrderModel(
     id: (json['id'] as num).toInt(),
@@ -43,6 +53,11 @@ class OrderModel {
         json['midtrans_response'] as Map<String, dynamic>? ?? const {},
     shippingFeeCents: (json['shipping_fee_cents'] as num? ?? 0).toInt(),
     distanceKm: (json['distance_km'] as num? ?? 0).toDouble(),
+    cancellationReason: json['cancellation_reason'] as String? ?? '',
+    refundBankName: json['refund_bank_name'] as String? ?? '',
+    refundAccountName: json['refund_account_name'] as String? ?? '',
+    refundAccountNumber: json['refund_account_number'] as String? ?? '',
+    irisPayoutReference: json['iris_payout_reference'] as String? ?? '',
   );
 }
 

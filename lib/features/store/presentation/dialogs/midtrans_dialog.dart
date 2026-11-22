@@ -136,7 +136,7 @@ class MidtransDialog {
                   ),
               ] else ...[
                 Text(
-                  'Silakan salin nomor Virtual Account (${bank?.toUpperCase() ?? 'BCA'}) di bawah ini untuk melakukan pembayaran:',
+                  'Silakan salin nomor Virtual Account (${bank?.toUpperCase() ?? 'VA'}) di bawah ini untuk melakukan pembayaran:',
                   style: const TextStyle(fontWeight: FontWeight.w600),
                 ),
                 const SizedBox(height: 12),

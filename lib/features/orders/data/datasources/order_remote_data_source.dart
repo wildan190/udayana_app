@@ -35,6 +35,10 @@ abstract interface class OrderRemoteDataSource {
   });
   Future<Map<String, dynamic>> getPaymentDetails(int orderId);
   Future<void> simulatePayment(int orderId);
+  Future<void> updateBankAccount(Map<String, dynamic> body);
+  Future<void> requestCancellation(int orderId, Map<String, dynamic> body);
+  Future<void> approveCancellation(int orderId);
+  Future<void> rejectCancellation(int orderId);
   Future<List<dynamic>> listAddresses();
   Future<Map<String, dynamic>> createAddress(Map<String, dynamic> body);
   Future<void> deleteAddress(int id);
@@ -163,6 +167,26 @@ class OrderRemoteDataSourceImpl implements OrderRemoteDataSource {
   @override
   Future<void> simulatePayment(int orderId) async {
     await _api.post('/admin/orders/$orderId/simulate-payment', body: {'status': 'settlement'});
+  }
+
+  @override
+  Future<void> updateBankAccount(Map<String, dynamic> body) async {
+    await _api.put('/buyer/bank-account', body: body);
+  }
+
+  @override
+  Future<void> requestCancellation(int orderId, Map<String, dynamic> body) async {
+    await _api.post('/buyer/orders/$orderId/cancel-request', body: body);
+  }
+
+  @override
+  Future<void> approveCancellation(int orderId) async {
+    await _api.post('/admin/orders/$orderId/approve-cancellation');
+  }
+
+  @override
+  Future<void> rejectCancellation(int orderId) async {
+    await _api.post('/admin/orders/$orderId/reject-cancellation');
   }
 
   @override

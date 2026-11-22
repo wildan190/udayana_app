@@ -12,6 +12,9 @@ class AppUser {
     this.rtRw = '',
     this.postalCode = '',
     this.address = '',
+    this.bankName = '',
+    this.accountName = '',
+    this.accountNumber = '',
   });
 
   final int id;
@@ -26,6 +29,9 @@ class AppUser {
   final String rtRw;
   final String postalCode;
   final String address;
+  final String bankName;
+  final String accountName;
+  final String accountNumber;
 
   bool get isAdmin => role == 'admin';
 

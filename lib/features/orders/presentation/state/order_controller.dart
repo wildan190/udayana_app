@@ -5,11 +5,17 @@ import 'order_event.dart';
 import 'order_state.dart';
 
 class OrderController extends ChangeNotifier {
-  OrderController(this._placeOrder, this._loadOrders, this._changeOrderStatus);
+  OrderController(
+    this._placeOrder,
+    this._loadOrders,
+    this._changeOrderStatus,
+    this._requestCancellation,
+  );
 
   final PlaceOrder _placeOrder;
   final LoadOrders _loadOrders;
   final ChangeOrderStatus _changeOrderStatus;
+  final Future<void> Function(int, Map<String, dynamic>) _requestCancellation;
   OrderState _state = const OrderState();
 
   OrderState get state => _state;
@@ -51,6 +57,18 @@ class OrderController extends ChangeNotifier {
           await dispatch(const LoadOrdersRequested(admin: true));
         } on Exception catch (error) {
           _state = OrderState(orders: _state.orders, error: error.toString());
+        }
+      case OrderCancellationRequested(:final orderId, :final body):
+        try {
+          await _requestCancellation(orderId, body);
+          await dispatch(const LoadOrdersRequested(admin: false));
+        } on Exception catch (error) {
+          _state = OrderState(
+            orders: _state.orders,
+            error: error.toString(),
+            lastOrder: _state.lastOrder,
+            isLoading: false,
+          );
         }
     }
     notifyListeners();

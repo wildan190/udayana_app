@@ -48,6 +48,10 @@ class AppServices {
     withdraw = orderRepository.withdraw;
     getPaymentDetails = orderRepository.getPaymentDetails;
     simulatePayment = orderRepository.simulatePayment;
+    updateBankAccount = orderRepository.updateBankAccount;
+    requestOrderCancellation = orderRepository.requestCancellation;
+    approveCancellation = orderRepository.approveCancellation;
+    rejectCancellation = orderRepository.rejectCancellation;
     listAddresses = orderRepository.listAddresses;
     createAddress = orderRepository.createAddress;
     deleteAddress = orderRepository.deleteAddress;
@@ -89,6 +93,10 @@ class AppServices {
   }) withdraw;
   late final Future<Map<String, dynamic>> Function(int) getPaymentDetails;
   late final Future<void> Function(int) simulatePayment;
+  late final Future<void> Function(Map<String, dynamic>) updateBankAccount;
+  late final Future<void> Function(int, Map<String, dynamic>) requestOrderCancellation;
+  late final Future<void> Function(int) approveCancellation;
+  late final Future<void> Function(int) rejectCancellation;
   late final Future<List<Map<String, dynamic>>> Function() listAddresses;
   late final Future<Map<String, dynamic>> Function(Map<String, dynamic>) createAddress;
   late final Future<void> Function(int) deleteAddress;

@@ -30,3 +30,10 @@ class OrderStatusChangeRequested extends OrderEvent {
   final int id;
   final String status;
 }
+
+class OrderCancellationRequested extends OrderEvent {
+  const OrderCancellationRequested(this.orderId, this.body);
+
+  final int orderId;
+  final Map<String, dynamic> body;
+}

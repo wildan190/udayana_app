@@ -17,6 +17,9 @@ class SessionStorage {
   static const _kRtRw = 'udayana_user_rtrw';
   static const _kPostalCode = 'udayana_user_postalcode';
   static const _kAddress = 'udayana_user_address';
+  static const _kBankName = 'udayana_user_bankname';
+  static const _kAccountName = 'udayana_user_accountname';
+  static const _kAccountNumber = 'udayana_user_accountnumber';
 
   static Future<void> save({
     required String token,
@@ -37,6 +40,9 @@ class SessionStorage {
       await prefs.setString(_kRtRw, user.rtRw);
       await prefs.setString(_kPostalCode, user.postalCode);
       await prefs.setString(_kAddress, user.address);
+      await prefs.setString(_kBankName, user.bankName);
+      await prefs.setString(_kAccountName, user.accountName);
+      await prefs.setString(_kAccountNumber, user.accountNumber);
     } catch (_) {}
   }
 
@@ -61,6 +67,9 @@ class SessionStorage {
         rtRw: prefs.getString(_kRtRw) ?? '',
         postalCode: prefs.getString(_kPostalCode) ?? '',
         address: prefs.getString(_kAddress) ?? '',
+        bankName: prefs.getString(_kBankName) ?? '',
+        accountName: prefs.getString(_kAccountName) ?? '',
+        accountNumber: prefs.getString(_kAccountNumber) ?? '',
       );
       return (token, user);
     } catch (_) {
@@ -84,6 +93,9 @@ class SessionStorage {
       await prefs.remove(_kRtRw);
       await prefs.remove(_kPostalCode);
       await prefs.remove(_kAddress);
+      await prefs.remove(_kBankName);
+      await prefs.remove(_kAccountName);
+      await prefs.remove(_kAccountNumber);
     } catch (_) {}
   }
 }

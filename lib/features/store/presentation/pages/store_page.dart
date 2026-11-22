@@ -1,9 +1,9 @@
 import 'dart:async';
 
+import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
-import 'package:flutter/material.dart';
 
 import '../../../../core/di/app_services.dart';
 import '../../../../core/native/cart_math.dart';
@@ -22,50 +22,14 @@ import '../../../products/domain/entities/product.dart';
 import '../../../products/presentation/state/product_controller.dart';
 import '../../../products/presentation/state/product_event.dart';
 import '../../domain/entities/home_layout.dart';
-import '../widgets/order_card.dart';
-import '../widgets/product_card.dart';
+import '../views/account_view.dart';
+import '../views/admin_views.dart';
+import '../views/cart_view.dart';
+import '../views/categories_view.dart';
+import '../views/home_view.dart';
+import '../views/orders_view.dart';
+import '../views/view_helpers.dart';
 import 'product_detail_page.dart';
-
-/// Pilihan filter status pesanan (value -> label).
-const Map<String, String> _orderStatusFilters = {
-  'all': 'Semua',
-  'pending': 'Belum Bayar',
-  'processing': 'Diproses',
-  'shipping': 'Dikirim',
-  'completed': 'Selesai',
-  'cancelled': 'Dibatalkan',
-};
-
-/// Metode pembayaran yang tersedia.
-class _PaymentMethod {
-  const _PaymentMethod(this.value, this.label, this.description, this.icon);
-
-  final String value;
-  final String label;
-  final String description;
-  final IconData icon;
-}
-
-const List<_PaymentMethod> _paymentMethods = [
-  _PaymentMethod(
-    'COD',
-    'COD (Bayar di Tempat)',
-    'Bayar tunai kepada kurir saat barang tiba di alamat pengiriman.',
-    Icons.payments_rounded,
-  ),
-  _PaymentMethod(
-    'MIDTRANS',
-    'Midtrans Virtual Account (BCA)',
-    'Bayar melalui transfer ATM / M-Banking BCA.',
-    Icons.account_balance_rounded,
-  ),
-  _PaymentMethod(
-    'MIDTRANS_QRIS',
-    'Midtrans QRIS (Scan QR)',
-    'Bayar instan via GoPay, OVO, Dana, ShopeePay, atau M-Banking.',
-    Icons.qr_code_scanner_rounded,
-  ),
-];
 
 class StorePage extends StatefulWidget {
   const StorePage({super.key, required this.services, required this.user});
@@ -88,6 +52,7 @@ class _StorePageState extends State<StorePage> {
   String _categoryFilter = '';
   String _needTypeFilter = '';
   String? _selectedCategoryInTab;
+  String? _selectedHomeCategoryAll;
   final TextEditingController _searchController = TextEditingController();
   Timer? _searchDebounce;
   String _reportPeriod = 'month';
@@ -98,7 +63,6 @@ class _StorePageState extends State<StorePage> {
   List<Customer> _customers = const [];
   SalesReport? _report;
   HomeLayout? _homeLayout;
-  String? _homeLayoutError;
   String? _panelError;
   bool _panelLoading = false;
   bool _checkoutInProgress = false;
@@ -107,6 +71,7 @@ class _StorePageState extends State<StorePage> {
   String _selectedCity = '';
   String _selectedDistrict = '';
   ShippingQuote? _shippingQuote;
+  final List<Product> _recentlyViewed = [];
   bool _shippingQuoteLoading = false;
   ShippingConfig? _shippingConfig;
   late AppUser _user;
@@ -129,6 +94,7 @@ class _StorePageState extends State<StorePage> {
       widget.services.placeOrder,
       widget.services.loadOrders,
       widget.services.changeOrderStatus,
+      widget.services.requestOrderCancellation,
     );
     _reloadProducts();
     if (!_isGuest) {
@@ -194,7 +160,6 @@ class _StorePageState extends State<StorePage> {
       ? Future<void>.value()
       : _orders.dispatch(LoadOrdersRequested(admin: _isAdmin));
 
-  /// Memuat ulang ongkos kirim untuk kota/kecamatan tujuan yang dipilih.
   Future<void> _refreshShippingQuote() async {
     if (_isGuest) return;
     if (_selectedCity.trim().isEmpty && _selectedDistrict.trim().isEmpty) {
@@ -219,7 +184,6 @@ class _StorePageState extends State<StorePage> {
 
   int get _shippingFeeCents => _shippingQuote?.feeCents ?? 0;
 
-  /// Label ringkas ongkir untuk ditampilkan di keranjang/checkout.
   String get _shippingFeeLabel {
     if (_shippingQuoteLoading) return 'Menghitung...';
     if (_shippingQuote == null) return 'Pilih alamat tujuan';
@@ -237,20 +201,246 @@ class _StorePageState extends State<StorePage> {
 
   List<Widget> get _pages => _isAdmin
       ? [
-          _buildProducts(),
-          _buildOrders(),
-          _buildCustomers(),
-          _buildReports(),
-          _buildShippingAdmin(),
+          HomeView(
+            productsController: _products,
+            isAdmin: _isAdmin,
+            cart: _cart,
+            knownProducts: _knownProducts,
+            homeLayout: _homeLayout,
+            category: _category,
+            search: _search,
+            searchController: _searchController,
+            selectedHomeCategoryAll: _selectedHomeCategoryAll,
+            onSearchChanged: _onProductSearchChanged,
+            onSearchSubmitted: _submitProductSearch,
+            onSelectCategory: _selectCategory,
+            onReloadProducts: _reloadProducts,
+            onOpenProductDetail: _openProductDetail,
+            onShowProductForm: _showProductForm,
+            onRemoveProduct: _removeProduct,
+            onAddToCart: _addToCart,
+            onSelectHomeCategoryAll: (val) =>
+                setState(() => _selectedHomeCategoryAll = val),
+            resolvedImageUrl: _resolvedImageUrl,
+            moneyFormatter: _money,
+          ),
+          OrdersView(
+            ordersController: _orders,
+            isAdmin: _isAdmin,
+            orderDateFilter: _orderDateFilter,
+            orderStatusFilter: _orderStatusFilter,
+            customFilterDate: _customFilterDate,
+            onOrderDateFilterChanged: (val) =>
+                setState(() => _orderDateFilter = val),
+            onCustomFilterDateSelected: (val) => setState(() {
+              _customFilterDate = val;
+              if (val != null) _orderDateFilter = 'custom';
+            }),
+            onOrderStatusFilterChanged: (val) =>
+                setState(() => _orderStatusFilter = val),
+            onReloadOrders: _reloadOrders,
+            onShowMidtransDetails: _showMidtransDetailsDialog,
+            onBuyAgain: _buyAgain,
+            onUpdateStatus: _updateOrderStatus,
+            onSimulatePayment: _simulatePayment,
+            onRequestCancellation: _requestOrderCancellation,
+            onApproveCancellation: _approveCancellation,
+            onRejectCancellation: _rejectCancellation,
+            moneyFormatter: _money,
+          ),
+          CustomersView(
+            panelLoading: _panelLoading,
+            panelError: _panelError,
+            customers: _customers,
+            onLoadCustomers: _loadCustomers,
+            onEditCustomer: _editCustomer,
+          ),
+          ReportsView(
+            panelLoading: _panelLoading,
+            panelError: _panelError,
+            reportPeriod: _reportPeriod,
+            reportValue: _reportValue,
+            report: _report,
+            onPeriodChanged: (val) {
+              setState(() {
+                _reportPeriod = val;
+                _reportValue = val == 'month'
+                    ? DateFormat('yyyy-MM').format(DateTime.now())
+                    : DateFormat('yyyy').format(DateTime.now());
+              });
+              _loadReport();
+            },
+            onReportValueChanged: (val) {
+              setState(() => _reportValue = val);
+              _loadReport();
+            },
+            onChooseReportMonth: _chooseReportMonth,
+            onLoadReport: _loadReport,
+            onOpenWithdrawDialog: _openWithdrawDialog,
+            moneyFormatter: _money,
+          ),
+          ShippingAdminView(
+            panelLoading: _panelLoading,
+            panelError: _panelError,
+            shippingConfig: _shippingConfig,
+            onLoadShippingConfig: _loadShippingConfig,
+            onEditShippingSettings: _editShippingSettings,
+            onEditShippingZone: _editShippingZone,
+            onDeleteShippingZone: _deleteShippingZone,
+            onEditShippingArea: _editShippingArea,
+            onDeleteShippingArea: _deleteShippingArea,
+            moneyFormatter: _money,
+          ),
         ]
       : _isGuest
-      ? [_buildProducts(), _buildCategoriesTab(), _buildCart()]
+      ? [
+          HomeView(
+            productsController: _products,
+            isAdmin: _isAdmin,
+            cart: _cart,
+            knownProducts: _knownProducts,
+            homeLayout: _homeLayout,
+            category: _category,
+            search: _search,
+            searchController: _searchController,
+            selectedHomeCategoryAll: _selectedHomeCategoryAll,
+            onSearchChanged: _onProductSearchChanged,
+            onSearchSubmitted: _submitProductSearch,
+            onSelectCategory: _selectCategory,
+            onReloadProducts: _reloadProducts,
+            onOpenProductDetail: _openProductDetail,
+            onShowProductForm: _showProductForm,
+            onRemoveProduct: _removeProduct,
+            onAddToCart: _addToCart,
+            onSelectHomeCategoryAll: (val) =>
+                setState(() => _selectedHomeCategoryAll = val),
+            resolvedImageUrl: _resolvedImageUrl,
+            moneyFormatter: _money,
+          ),
+          CategoriesView(
+            productsController: _products,
+            isAdmin: _isAdmin,
+            cart: _cart,
+            selectedCategoryInTab: _selectedCategoryInTab,
+            onSelectCategoryInTab: (val) =>
+                setState(() => _selectedCategoryInTab = val),
+            onOpenProductDetail: _openProductDetail,
+            onShowProductForm: _showProductForm,
+            onRemoveProduct: _removeProduct,
+            onAddToCart: _addToCart,
+            resolvedImageUrl: _resolvedImageUrl,
+            moneyFormatter: _money,
+          ),
+          CartView(
+            knownProducts: _knownProducts,
+            cart: _cart,
+            cartCount: _cartCount,
+            shippingFeeCents: _shippingFeeCents,
+            shippingFeeLabel: _shippingFeeLabel,
+            selectedPaymentMethod: _selectedPaymentMethod,
+            onChangeQuantity: _changeQuantity,
+            onSelectPaymentMethod: (val) =>
+                setState(() => _selectedPaymentMethod = val),
+            onShowAllPaymentMethods: _showAllPaymentMethods,
+            onCheckout: _checkout,
+            resolvedImageUrl: _resolvedImageUrl,
+            moneyFormatter: _money,
+          ),
+        ]
       : [
-          _buildProducts(),
-          _buildCategoriesTab(),
-          _buildCart(),
-          _buildOrders(),
-          _buildAccountTab(),
+          HomeView(
+            productsController: _products,
+            isAdmin: _isAdmin,
+            cart: _cart,
+            knownProducts: _knownProducts,
+            homeLayout: _homeLayout,
+            category: _category,
+            search: _search,
+            searchController: _searchController,
+            selectedHomeCategoryAll: _selectedHomeCategoryAll,
+            onSearchChanged: _onProductSearchChanged,
+            onSearchSubmitted: _submitProductSearch,
+            onSelectCategory: _selectCategory,
+            onReloadProducts: _reloadProducts,
+            onOpenProductDetail: _openProductDetail,
+            onShowProductForm: _showProductForm,
+            onRemoveProduct: _removeProduct,
+            onAddToCart: _addToCart,
+            onSelectHomeCategoryAll: (val) =>
+                setState(() => _selectedHomeCategoryAll = val),
+            resolvedImageUrl: _resolvedImageUrl,
+            moneyFormatter: _money,
+          ),
+          CategoriesView(
+            productsController: _products,
+            isAdmin: _isAdmin,
+            cart: _cart,
+            selectedCategoryInTab: _selectedCategoryInTab,
+            onSelectCategoryInTab: (val) =>
+                setState(() => _selectedCategoryInTab = val),
+            onOpenProductDetail: _openProductDetail,
+            onShowProductForm: _showProductForm,
+            onRemoveProduct: _removeProduct,
+            onAddToCart: _addToCart,
+            resolvedImageUrl: _resolvedImageUrl,
+            moneyFormatter: _money,
+          ),
+          CartView(
+            knownProducts: _knownProducts,
+            cart: _cart,
+            cartCount: _cartCount,
+            shippingFeeCents: _shippingFeeCents,
+            shippingFeeLabel: _shippingFeeLabel,
+            selectedPaymentMethod: _selectedPaymentMethod,
+            onChangeQuantity: _changeQuantity,
+            onSelectPaymentMethod: (val) =>
+                setState(() => _selectedPaymentMethod = val),
+            onShowAllPaymentMethods: _showAllPaymentMethods,
+            onCheckout: _checkout,
+            resolvedImageUrl: _resolvedImageUrl,
+            moneyFormatter: _money,
+          ),
+          OrdersView(
+            ordersController: _orders,
+            isAdmin: _isAdmin,
+            orderDateFilter: _orderDateFilter,
+            orderStatusFilter: _orderStatusFilter,
+            customFilterDate: _customFilterDate,
+            onOrderDateFilterChanged: (val) =>
+                setState(() => _orderDateFilter = val),
+            onCustomFilterDateSelected: (val) => setState(() {
+              _customFilterDate = val;
+              if (val != null) _orderDateFilter = 'custom';
+            }),
+            onOrderStatusFilterChanged: (val) =>
+                setState(() => _orderStatusFilter = val),
+            onReloadOrders: _reloadOrders,
+            onShowMidtransDetails: _showMidtransDetailsDialog,
+            onBuyAgain: _buyAgain,
+            onUpdateStatus: _updateOrderStatus,
+            onSimulatePayment: _simulatePayment,
+            onRequestCancellation: _requestOrderCancellation,
+            onApproveCancellation: _approveCancellation,
+            onRejectCancellation: _rejectCancellation,
+            moneyFormatter: _money,
+          ),
+          AccountView(
+            user: _user,
+            orders: _orders.state.orders,
+            recentlyViewed: _recentlyViewed,
+            cart: _cart,
+            isAdmin: _isAdmin,
+            onOpenProfile: _openProfile,
+            onOpenAddressSelectionDialog: _openAddressSelectionDialog,
+            onOpenOrdersWithStatus: _openOrdersWithStatus,
+            onOpenProductDetail: _openProductDetail,
+            onShowProductForm: _showProductForm,
+            onRemoveProduct: _removeProduct,
+            onAddToCart: _addToCart,
+            onSignOut: _signOut,
+            resolvedImageUrl: _resolvedImageUrl,
+            moneyFormatter: _money,
+          ),
         ];
 
   void _selectTab(int index) {
@@ -268,121 +458,150 @@ class _StorePageState extends State<StorePage> {
     if (_tabIndex == 0) _reloadProducts();
   }
 
+  bool _handleBackPress() {
+    if (_tabIndex == 0 && _selectedHomeCategoryAll != null) {
+      setState(() => _selectedHomeCategoryAll = null);
+      return true;
+    }
+    if (_tabIndex == 1 && _selectedCategoryInTab != null) {
+      setState(() => _selectedCategoryInTab = null);
+      return true;
+    }
+    if (_tabIndex > 0) {
+      setState(() {
+        _selectedHomeCategoryAll = null;
+        _selectedCategoryInTab = null;
+        _tabIndex = 0;
+      });
+      return true;
+    }
+    return false;
+  }
+
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        titleSpacing: 20,
-        title: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            ClipRRect(
-              borderRadius: AppRadius.tagAll,
-              child: Image.asset(
-                'assets/images/logo.png',
-                width: 28,
-                height: 28,
-                fit: BoxFit.cover,
-              ),
-            ),
-            const SizedBox(width: 6),
-            Flexible(
-              child: Text(
-                'udayana',
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: Theme.of(context).textTheme.titleLarge
-                    ?.copyWith(fontWeight: FontWeight.w700, letterSpacing: -0.3),
-              ),
-            ),
-          ],
-        ),
-        actions: _isGuest
-            ? [
-                TextButton(onPressed: _openLogin, child: const Text('Masuk')),
-                IconButton(
-                  tooltip: 'Daftar pembeli',
-                  onPressed: _openRegister,
-                  icon: const Icon(Icons.person_add_alt_1_rounded),
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, result) async {
+        if (didPop) return;
+        final handled = _handleBackPress();
+        if (!handled) {
+          SystemNavigator.pop();
+        }
+      },
+      child: Scaffold(
+        appBar: AppBar(
+          titleSpacing: 20,
+          title: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ClipRRect(
+                borderRadius: AppRadius.tagAll,
+                child: Image.asset(
+                  'assets/images/logo.png',
+                  width: 28,
+                  height: 28,
+                  fit: BoxFit.cover,
                 ),
-                const SizedBox(width: 4),
-              ]
-            : [
-                PopupMenuButton<String>(
-                  tooltip: 'Akun',
-                  onSelected: (value) {
-                    if (value == 'profile') _openProfile();
-                    if (value == 'address') _openAddressDialog();
-                    if (value == 'logout') _signOut();
-                  },
-                  itemBuilder: (_) => [
-                    PopupMenuItem<String>(
-                      enabled: false,
-                      child: Text(_isAdmin ? 'Administrator' : _user.name),
-                    ),
-                    if (!_isAdmin) ...[
-                      const PopupMenuItem(
-                        value: 'profile',
-                        child: Row(
-                          children: [
-                            Icon(Icons.person_outline_rounded, size: 20),
-                            SizedBox(width: 8),
-                            Text('Profil Saya'),
-                          ],
-                        ),
+              ),
+              const SizedBox(width: 6),
+              Flexible(
+                child: Text(
+                  'udayana',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.titleLarge
+                      ?.copyWith(fontWeight: FontWeight.w700, letterSpacing: -0.3),
+                ),
+              ),
+            ],
+          ),
+          actions: _isGuest
+              ? [
+                  TextButton(onPressed: _openLogin, child: const Text('Masuk')),
+                  IconButton(
+                    tooltip: 'Daftar pembeli',
+                    onPressed: _openRegister,
+                    icon: const Icon(Icons.person_add_alt_1_rounded),
+                  ),
+                  const SizedBox(width: 4),
+                ]
+              : [
+                  PopupMenuButton<String>(
+                    tooltip: 'Akun',
+                    onSelected: (value) {
+                      if (value == 'profile') _openProfile();
+                      if (value == 'address') _openAddressDialog();
+                      if (value == 'logout') _signOut();
+                    },
+                    itemBuilder: (_) => [
+                      PopupMenuItem<String>(
+                        enabled: false,
+                        child: Text(_isAdmin ? 'Administrator' : _user.name),
                       ),
-                      const PopupMenuItem(
-                        value: 'address',
-                        child: Row(
-                          children: [
-                            Icon(Icons.location_on_outlined, size: 20),
-                            SizedBox(width: 8),
-                            Text('Alamat Saya'),
-                          ],
+                      if (!_isAdmin) ...[
+                        const PopupMenuItem(
+                          value: 'profile',
+                          child: Row(
+                            children: [
+                              Icon(Icons.person_outline_rounded, size: 20),
+                              SizedBox(width: 8),
+                              Text('Profil Saya'),
+                            ],
+                          ),
                         ),
-                      ),
+                        const PopupMenuItem(
+                          value: 'address',
+                          child: Row(
+                            children: [
+                              Icon(Icons.location_on_outlined, size: 20),
+                              SizedBox(width: 8),
+                              Text('Alamat Saya'),
+                            ],
+                          ),
+                        ),
+                      ],
+                      const PopupMenuItem(value: 'logout', child: Text('Keluar')),
                     ],
-                    const PopupMenuItem(value: 'logout', child: Text('Keluar')),
-                  ],
-                  child: Padding(
-                    padding: const EdgeInsets.only(right: 14),
-                    child: Center(
-                      child: CircleAvatar(
-                        radius: 18,
-                        backgroundColor: AppColors.primaryBg,
-                        child: Text(
-                          _user.name.isEmpty
-                              ? '?'
-                              : _user.name.characters.first.toUpperCase(),
-                          style: const TextStyle(
-                            color: AppColors.primary,
-                            fontWeight: FontWeight.w700,
+                    child: Padding(
+                      padding: const EdgeInsets.only(right: 14),
+                      child: Center(
+                        child: CircleAvatar(
+                          radius: 18,
+                          backgroundColor: AppColors.primaryBg,
+                          child: Text(
+                            _user.name.isEmpty
+                                ? '?'
+                                : _user.name.characters.first.toUpperCase(),
+                            style: const TextStyle(
+                              color: AppColors.primary,
+                              fontWeight: FontWeight.w700,
+                            ),
                           ),
                         ),
                       ),
                     ),
                   ),
+                ],
+        ),
+        body: IndexedStack(index: _tabIndex, children: _pages),
+        bottomNavigationBar: _floatingNavBar(),
+        floatingActionButton: _isAdmin && _tabIndex == 0
+            ? FloatingActionButton(
+                onPressed: _showProductForm,
+                backgroundColor: AppColors.primary,
+                foregroundColor: Colors.white,
+                elevation: 2,
+                shape: const RoundedRectangleBorder(
+                  borderRadius: AppRadius.controlAll,
                 ),
-              ],
+                child: const Icon(Icons.add_rounded),
+              )
+            : null,
       ),
-      body: IndexedStack(index: _tabIndex, children: _pages),
-      bottomNavigationBar: _floatingNavBar(),
-      floatingActionButton: _isAdmin && _tabIndex == 0
-          ? FloatingActionButton(
-              onPressed: _showProductForm,
-              backgroundColor: AppColors.primary,
-              foregroundColor: Colors.white,
-              elevation: 2,
-              shape: const RoundedRectangleBorder(
-                borderRadius: AppRadius.controlAll,
-              ),
-              child: const Icon(Icons.add_rounded),
-            )
-          : null,
     );
   }
 
-  /// Navbar bawah yang melayang (floating), ramping, dan konsisten.
   Widget _floatingNavBar() {
     return SafeArea(
       top: false,
@@ -468,508 +687,6 @@ class _StorePageState extends State<StorePage> {
     return icon;
   }
 
-  Widget _buildProducts() {
-    return AnimatedBuilder(
-      animation: _products,
-      builder: (context, _) {
-        final state = _products.state;
-        for (final product in state.products) {
-          _knownProducts[product.id] = product;
-        }
-        if (state.isLoading && state.products.isEmpty) {
-          return const Center(child: CircularProgressIndicator());
-        }
-        if (state.error != null && state.products.isEmpty) {
-          return _errorPanel(state.error!, _reloadProducts);
-        }
-        final visible = state.products;
-
-        if (!_isAdmin) {
-          return RefreshIndicator(
-            onRefresh: _reloadProducts,
-            child: _buildBuyerHome(visible),
-          );
-        }
-
-        return RefreshIndicator(
-          onRefresh: _reloadProducts,
-          child: CustomScrollView(
-            physics: const AlwaysScrollableScrollPhysics(),
-            slivers: [
-              if (_isAdmin) ...[
-                SliverToBoxAdapter(
-                  child: Padding(
-                    padding: const EdgeInsets.fromLTRB(18, 16, 18, 0),
-                    child: _adminHeading('Kelola produk'),
-                  ),
-                ),
-                SliverToBoxAdapter(child: _searchBox()),
-              ],
-              if (state.error != null)
-                SliverToBoxAdapter(child: _inlineError(state.error!)),
-              if (visible.isEmpty)
-                SliverFillRemaining(
-                  hasScrollBody: false,
-                  child: _emptyPanel(
-                    _search.isEmpty
-                        ? 'Belum ada produk'
-                        : 'Produk tidak ditemukan',
-                    _search.isEmpty
-                        ? 'Produk akan muncul di sini setelah tersambung ke server.'
-                        : 'Coba kata kunci atau kategori lain.',
-                    Icons.inventory_2_outlined,
-                  ),
-                )
-              else
-                SliverPadding(
-                  padding: const EdgeInsets.fromLTRB(18, 8, 18, 16),
-                  sliver: SliverLayoutBuilder(
-                    builder: (context, constraints) {
-                      final columns = constraints.crossAxisExtent > 650 ? 3 : 2;
-                      return SliverGrid.builder(
-                        itemCount: visible.length,
-                        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                          crossAxisCount: columns,
-                          mainAxisSpacing: 13,
-                          crossAxisSpacing: 13,
-                          mainAxisExtent: _isAdmin ? 296 : 290,
-                        ),
-                        itemBuilder: (context, index) => ProductCard(
-                          product: visible[index],
-                          quantity: _cart[visible[index].id] ?? 0,
-                          isAdmin: _isAdmin,
-                          onTap: () => _openProductDetail(visible[index]),
-                          onEdit: () => _showProductForm(visible[index]),
-                          onDelete: () => _removeProduct(visible[index]),
-                          onAddToCart: () => _addToCart(visible[index]),
-                          resolvedImageUrl: _resolvedImageUrl,
-                          moneyFormatter: _money,
-                        ),
-                      );
-                    },
-                  ),
-                ),
-              if (state.hasMore)
-                SliverToBoxAdapter(
-                  child: Padding(
-                    padding: const EdgeInsets.fromLTRB(18, 0, 18, 24),
-                    child: OutlinedButton.icon(
-                      onPressed: state.isLoading
-                          ? null
-                          : () => _reloadProducts(append: true),
-                      icon: state.isLoading
-                          ? const SizedBox(
-                              width: 18,
-                              height: 18,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            )
-                          : const Icon(Icons.expand_more_rounded),
-                      label: Text(
-                        state.isLoading ? 'Memuat produk...' : 'Muat lainnya',
-                      ),
-                    ),
-                  ),
-                )
-              else if (visible.isNotEmpty)
-                SliverToBoxAdapter(
-                  child: Padding(
-                    padding: const EdgeInsets.fromLTRB(18, 8, 18, 24),
-                    child: Center(
-                      child: Text(
-                        'Menampilkan ${visible.length} dari ${state.total} produk',
-                        style: Theme.of(context).textTheme.bodySmall,
-                      ),
-                    ),
-                  ),
-                ),
-            ],
-          ),
-        );
-      },
-    );
-  }
-
-  Widget _buildProductGrid(List<Product> products) {
-    return CustomScrollView(
-      physics: const AlwaysScrollableScrollPhysics(),
-      slivers: [
-        SliverToBoxAdapter(child: _searchBox()),
-        SliverToBoxAdapter(
-          child: _categorySelector(
-            _homeLayout?.components
-                    .firstWhere(
-                      (c) => c.type == 'category_filters',
-                      orElse: () =>
-                          const HomeComponent(type: 'category_filters', categories: []),
-                    )
-                    .categories ??
-                [],
-          ),
-        ),
-        if (products.isEmpty)
-          SliverFillRemaining(
-            hasScrollBody: false,
-            child: _emptyPanel(
-              'Produk tidak ditemukan',
-              'Coba kata kunci atau kategori lain.',
-              Icons.inventory_2_outlined,
-            ),
-          )
-        else
-          SliverPadding(
-            padding: const EdgeInsets.fromLTRB(18, 8, 18, 16),
-            sliver: SliverLayoutBuilder(
-              builder: (context, constraints) {
-                final columns = constraints.crossAxisExtent > 650 ? 3 : 2;
-                return SliverGrid.builder(
-                  itemCount: products.length,
-                  gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                    crossAxisCount: columns,
-                    mainAxisSpacing: 13,
-                    crossAxisSpacing: 13,
-                    mainAxisExtent: _isAdmin ? 296 : 290,
-                  ),
-                  itemBuilder: (context, index) => ProductCard(
-                    product: products[index],
-                    quantity: _cart[products[index].id] ?? 0,
-                    isAdmin: _isAdmin,
-                    onTap: () => _openProductDetail(products[index]),
-                    onEdit: () => _showProductForm(products[index]),
-                    onDelete: () => _removeProduct(products[index]),
-                    onAddToCart: () => _addToCart(products[index]),
-                    resolvedImageUrl: _resolvedImageUrl,
-                    moneyFormatter: _money,
-                  ),
-                );
-              },
-            ),
-          ),
-      ],
-    );
-  }
-
-  Widget _buildBuyerHome(List<Product> products) {
-    if (_homeLayout == null ||
-        _homeLayout!.components.isEmpty ||
-        _category != 'Semua' ||
-        _search.isNotEmpty) {
-      return _buildProductGrid(products);
-    }
-
-    final categories = <String, List<Product>>{};
-    for (final p in products) {
-      final cat = p.category.isNotEmpty ? p.category : p.needLabel;
-      categories.putIfAbsent(cat, () => []).add(p);
-    }
-
-    return CustomScrollView(
-      physics: const AlwaysScrollableScrollPhysics(),
-      slivers: [
-        SliverToBoxAdapter(child: _searchBox()),
-        SliverToBoxAdapter(
-          child: _categorySelector(
-            _homeLayout?.components
-                    .firstWhere(
-                      (c) => c.type == 'category_filters',
-                      orElse: () =>
-                          const HomeComponent(type: 'category_filters', categories: []),
-                    )
-                    .categories ??
-                [],
-          ),
-        ),
-        for (final entry in categories.entries) ...[
-          SliverToBoxAdapter(
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 6),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text(
-                    entry.key,
-                    style: const TextStyle(
-                      fontWeight: FontWeight.w700,
-                      fontSize: 16,
-                    ),
-                  ),
-                  TextButton.icon(
-                    onPressed: () {
-                      setState(() {
-                        _category = entry.key;
-                        _categoryFilter = entry.key;
-                      });
-                      _reloadProducts();
-                    },
-                    iconAlignment: IconAlignment.end,
-                    icon: const Icon(Icons.chevron_right_rounded, size: 18),
-                    label: const Text('Semua'),
-                  ),
-                ],
-              ),
-            ),
-          ),
-          SliverToBoxAdapter(
-            child: SizedBox(
-              height: _isAdmin ? 296 : 290,
-              child: ListView.builder(
-                padding: const EdgeInsets.symmetric(horizontal: 14),
-                scrollDirection: Axis.horizontal,
-                itemCount: entry.value.length,
-                itemBuilder: (context, index) => SizedBox(
-                  width: 170,
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 4),
-                    child: ProductCard(
-                      product: entry.value[index],
-                      quantity: _cart[entry.value[index].id] ?? 0,
-                      isAdmin: _isAdmin,
-                      onTap: () => _openProductDetail(entry.value[index]),
-                      onEdit: () => _showProductForm(entry.value[index]),
-                      onDelete: () => _removeProduct(entry.value[index]),
-                      onAddToCart: () => _addToCart(entry.value[index]),
-                      resolvedImageUrl: _resolvedImageUrl,
-                      moneyFormatter: _money,
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          ),
-        ],
-      ],
-    );
-  }
-
-  Widget _buildCategoriesTab() {
-    final categories = [
-      {'label': 'Bahan Pokok', 'icon': Icons.rice_bowl_outlined, 'color': const Color(0xFFEAF4E7)},
-      {'label': 'Makanan', 'icon': Icons.fastfood_outlined, 'color': const Color(0xFFFFF8E1)},
-      {'label': 'Minuman', 'icon': Icons.local_drink_outlined, 'color': const Color(0xFFE0F7FA)},
-      {'label': 'Protein', 'icon': Icons.egg_alt_outlined, 'color': const Color(0xFFFFF3E0)},
-      {'label': 'Perawatan Diri', 'icon': Icons.spa_outlined, 'color': const Color(0xFFE3F2FD)},
-      {'label': 'Rumah Tangga', 'icon': Icons.home_outlined, 'color': const Color(0xFFF3E5F5)},
-      {'label': 'Daily need', 'icon': Icons.star_outline_rounded, 'color': const Color(0xFFE0F2F1)},
-      {'label': 'Daily essentials', 'icon': Icons.local_mall_outlined, 'color': const Color(0xFFFCE4EC)},
-    ];
-
-    if (_selectedCategoryInTab != null) {
-      final categoryName = _selectedCategoryInTab!;
-      final categoryProducts = _products.state.products.where((p) {
-        if (categoryName == 'Daily need') return p.needType == 'daily_need';
-        if (categoryName == 'Daily essentials') return p.needType == 'daily_essentials';
-        return p.category == categoryName || p.needLabel == categoryName;
-      }).toList();
-
-      return Column(
-        children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(18, 14, 18, 10),
-            child: Row(
-              children: [
-                IconButton(
-                  onPressed: () {
-                    setState(() {
-                      _selectedCategoryInTab = null;
-                    });
-                  },
-                  icon: const Icon(Icons.arrow_back_rounded),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    'Kategori: $categoryName',
-                    style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w700),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          Expanded(
-            child: categoryProducts.isEmpty
-                ? _emptyPanel(
-                    'Belum ada produk di kategori ini',
-                    'Produk untuk $categoryName akan muncul di sini.',
-                    Icons.inventory_2_outlined,
-                  )
-                : GridView.builder(
-                    padding: const EdgeInsets.fromLTRB(18, 8, 18, 24),
-                    itemCount: categoryProducts.length,
-                    gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                      crossAxisCount: 2,
-                      mainAxisSpacing: 13,
-                      crossAxisSpacing: 13,
-                      mainAxisExtent: _isAdmin ? 296 : 290,
-                    ),
-                    itemBuilder: (context, index) => ProductCard(
-                      product: categoryProducts[index],
-                      quantity: _cart[categoryProducts[index].id] ?? 0,
-                      isAdmin: _isAdmin,
-                      onTap: () => _openProductDetail(categoryProducts[index]),
-                      onEdit: () => _showProductForm(categoryProducts[index]),
-                      onDelete: () => _removeProduct(categoryProducts[index]),
-                      onAddToCart: () => _addToCart(categoryProducts[index]),
-                      resolvedImageUrl: _resolvedImageUrl,
-                      moneyFormatter: _money,
-                    ),
-                  ),
-          ),
-        ],
-      );
-    }
-
-    return ListView(
-      padding: const EdgeInsets.fromLTRB(18, 18, 18, 30),
-      children: [
-        Text(
-          'Kategori Produk',
-          style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w700),
-        ),
-        const SizedBox(height: 14),
-        for (final cat in categories)
-          Card(
-            margin: const EdgeInsets.only(bottom: 10),
-            child: ListTile(
-              leading: CircleAvatar(
-                backgroundColor: cat['color'] as Color,
-                child: Icon(cat['icon'] as IconData, color: AppColors.primary),
-              ),
-              title: Text(cat['label'] as String, style: const TextStyle(fontWeight: FontWeight.bold)),
-              trailing: const Icon(Icons.arrow_forward_ios_rounded, size: 16),
-              onTap: () {
-                setState(() {
-                  _selectedCategoryInTab = cat['label'] as String;
-                });
-              },
-            ),
-          ),
-      ],
-    );
-  }
-
-  Widget _homeComponent(HomeComponent component) {
-    switch (component.type) {
-      case 'hero_banner':
-        return _heroBanner(component);
-      case 'search_field':
-        return _searchBox();
-      case 'category_filters':
-        return _categorySelector(component.categories);
-      default:
-        return _inlineError(
-          'Komponen beranda "${component.type}" belum didukung aplikasi.',
-        );
-    }
-  }
-
-  Widget _heroBanner(HomeComponent component) {
-    return Container(
-      margin: const EdgeInsets.fromLTRB(18, 10, 18, 16),
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        borderRadius: AppRadius.cardAll,
-        gradient: const LinearGradient(
-          colors: [AppColors.primaryActive, AppColors.primary],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
-      ),
-      child: Row(
-        children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  component.title,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 20,
-                    fontWeight: FontWeight.w700,
-                    height: 1.25,
-                  ),
-                ),
-                const SizedBox(height: 6),
-                Text(
-                  component.subtitle,
-                  style: TextStyle(
-                    color: Colors.white.withValues(alpha: 0.85),
-                    fontSize: 12,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(width: 10),
-          Icon(
-            Icons.local_grocery_store_rounded,
-            color: Colors.white.withValues(alpha: 0.9),
-            size: 54,
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _searchBox() => Padding(
-    padding: const EdgeInsets.fromLTRB(18, 16, 18, 14),
-    child: Row(
-      children: [
-        Expanded(
-          child: SizedBox(
-            height: 48,
-            child: TextField(
-              controller: _searchController,
-              textInputAction: TextInputAction.search,
-              textAlignVertical: TextAlignVertical.center,
-              onSubmitted: (_) => _submitProductSearch(),
-              decoration: InputDecoration(
-                hintText: 'Cari beras, minyak, kebutuhan rumah...',
-                contentPadding: const EdgeInsets.symmetric(
-                  horizontal: 14,
-                  vertical: 12,
-                ),
-                prefixIcon: const Icon(Icons.search_rounded, size: 20),
-                prefixIconConstraints: const BoxConstraints(
-                  minWidth: 44,
-                  minHeight: 44,
-                ),
-                suffixIcon: _searchController.text.isNotEmpty
-                    ? IconButton(
-                        visualDensity: VisualDensity.compact,
-                        iconSize: 18,
-                        icon: const Icon(Icons.clear_rounded),
-                        onPressed: () {
-                          _searchController.clear();
-                          _search = '';
-                          _submitProductSearch();
-                        },
-                      )
-                    : null,
-                suffixIconConstraints: const BoxConstraints(
-                  minWidth: 44,
-                  minHeight: 44,
-                ),
-              ),
-            ),
-          ),
-        ),
-        const SizedBox(width: 8),
-        SizedBox(
-          height: 48,
-          child: FilledButton(
-            style: FilledButton.styleFrom(
-              padding: const EdgeInsets.symmetric(horizontal: 20),
-              minimumSize: const Size(0, 48),
-              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-            ),
-            onPressed: _submitProductSearch,
-            child: const Text('Cari'),
-          ),
-        ),
-      ],
-    ),
-  );
-
   void _submitProductSearch() {
     setState(() {
       _search = _searchController.text.trim();
@@ -977,177 +694,6 @@ class _StorePageState extends State<StorePage> {
     _reloadProducts();
   }
 
-  Widget _categorySelector(List<HomeCategory> categories) => SizedBox(
-    height: 48,
-    child: ListView(
-      padding: const EdgeInsets.symmetric(horizontal: 18),
-      scrollDirection: Axis.horizontal,
-      children: [
-        for (final category in categories)
-          Padding(
-            padding: const EdgeInsets.only(right: 8),
-            child: ChoiceChip(
-              label: Text(category.label),
-              selected: _category == category.label,
-              onSelected: (_) => _selectCategory(category),
-            ),
-          ),
-      ],
-    ),
-  );
-
-
-
-  Widget _buildCart() {
-    final items = _knownProducts.values
-        .where((product) => (_cart[product.id] ?? 0) > 0)
-        .toList();
-    final subtotal = CartMath.total(
-      items.map((item) => item.priceCents).toList(),
-      items.map((item) => _cart[item.id]!).toList(),
-    );
-    final total = subtotal + _shippingFeeCents;
-    if (items.isEmpty) {
-      return _emptyPanel(
-        'Keranjangmu masih kosong',
-        'Tambahkan kebutuhan harian dari katalog produk.',
-        Icons.shopping_bag_outlined,
-      );
-    }
-    return ListView(
-      padding: const EdgeInsets.fromLTRB(18, 18, 18, 30),
-      children: [
-        _adminHeading('Keranjang belanja'),
-        for (final product in items) _cartItem(product),
-        const SizedBox(height: 12),
-        _paymentMethodSection(),
-        const SizedBox(height: 12),
-        Card(
-          child: Padding(
-            padding: const EdgeInsets.all(18),
-            child: Column(
-              children: [
-                _summaryRow('Jumlah barang', '$_cartCount item'),
-                const SizedBox(height: 6),
-                _summaryRow('Subtotal', _money(subtotal)),
-                const SizedBox(height: 6),
-                _summaryRow('Ongkos kirim', _shippingFeeLabel),
-                const Divider(height: 24),
-                _summaryRow('Total pembayaran', _money(total), bold: true),
-                const SizedBox(height: 18),
-                _primaryButton(
-                  label: 'Lanjut checkout',
-                  onPressed: () => _checkout([
-                    for (final product in items)
-                      {
-                        'product_id': product.id,
-                        'quantity': _cart[product.id]!,
-                      },
-                  ]),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-
-  /// Section metode pembayaran: daftar pilihan (bukan dropdown) + "Lihat semua".
-  Widget _paymentMethodSection() {
-    final selected = _selectedPaymentMethodValue;
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                const Text(
-                  'Metode Pembayaran',
-                  style: TextStyle(
-                    fontSize: 15,
-                    fontWeight: FontWeight.w700,
-                    color: AppColors.textPrimary,
-                  ),
-                ),
-                const Spacer(),
-                TextButton(
-                  onPressed: _showAllPaymentMethods,
-                  child: const Text('Lihat semua'),
-                ),
-              ],
-            ),
-            const SizedBox(height: 4),
-            for (final method in _paymentMethods)
-              _paymentMethodTile(
-                method,
-                selected: selected == method.value,
-                onTap: () => setState(
-                  () => _selectedPaymentMethod = method.value,
-                ),
-              ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _paymentMethodTile(
-    _PaymentMethod method, {
-    required bool selected,
-    required VoidCallback onTap,
-  }) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
-      child: InkWell(
-        borderRadius: AppRadius.controlAll,
-        onTap: onTap,
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-          decoration: BoxDecoration(
-            color: selected ? AppColors.primaryBg : AppColors.container,
-            borderRadius: AppRadius.controlAll,
-            border: Border.all(
-              color: selected ? AppColors.primary : AppColors.border,
-              width: selected ? 1.4 : 1,
-            ),
-          ),
-          child: Row(
-            children: [
-              Icon(
-                method.icon,
-                size: 20,
-                color: selected ? AppColors.primary : AppColors.textSecondary,
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Text(
-                  method.label,
-                  style: TextStyle(
-                    fontSize: 13.5,
-                    fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
-                    color: AppColors.textPrimary,
-                  ),
-                ),
-              ),
-              const SizedBox(width: 8),
-              Icon(
-                selected
-                    ? Icons.check_circle_rounded
-                    : Icons.radio_button_unchecked_rounded,
-                size: 20,
-                color: selected ? AppColors.primary : AppColors.border,
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  /// Bottom sheet berisi seluruh metode pembayaran beserta deskripsinya.
   void _showAllPaymentMethods() {
     showModalBottomSheet<void>(
       context: context,
@@ -1167,7 +713,7 @@ class _StorePageState extends State<StorePage> {
                 ),
               ),
               const SizedBox(height: 16),
-              for (final method in _paymentMethods)
+              for (final method in paymentMethods)
                 Padding(
                   padding: const EdgeInsets.only(bottom: 10),
                   child: InkWell(
@@ -1237,246 +783,15 @@ class _StorePageState extends State<StorePage> {
   }
 
   String get _selectedPaymentMethodValue =>
-      _paymentMethods.any((m) => m.value == _selectedPaymentMethod)
+      paymentMethods.any((m) => m.value == _selectedPaymentMethod)
           ? _selectedPaymentMethod
-          : _paymentMethods.first.value;
+          : paymentMethods.first.value;
 
-  _PaymentMethod _methodFor(String value) => _paymentMethods.firstWhere(
+  PaymentMethod _methodFor(String value) => paymentMethods.firstWhere(
     (m) => m.value == value,
-    orElse: () => _paymentMethods.first,
+    orElse: () => paymentMethods.first,
   );
 
-  Widget _cartItem(Product product) => Card(
-    margin: const EdgeInsets.only(bottom: 10),
-    child: Padding(
-      padding: const EdgeInsets.all(12),
-      child: Row(
-        children: [
-          ClipRRect(
-            borderRadius: AppRadius.controlAll,
-            child: Container(
-              width: 56,
-              height: 56,
-              color: AppColors.fill,
-              child: product.imageUrl.isNotEmpty
-                  ? Image.network(
-                      _resolvedImageUrl(product.imageUrl),
-                      fit: BoxFit.cover,
-                      cacheWidth: 150,
-                      errorBuilder: (_, _, _) => const Icon(
-                        Icons.shopping_basket_outlined,
-                        color: AppColors.textTertiary,
-                        size: 22,
-                      ),
-                    )
-                  : const Icon(
-                      Icons.shopping_basket_outlined,
-                      color: AppColors.primary,
-                      size: 22,
-                    ),
-            ),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  product.name,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(fontWeight: FontWeight.w700),
-                ),
-                Text(_money(product.priceCents)),
-                Text(
-                  product.needLabel,
-                  style: Theme.of(context).textTheme.bodySmall,
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(width: 4),
-          Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              IconButton(
-                visualDensity: VisualDensity.compact,
-                onPressed: () => _changeQuantity(product, -1),
-                icon: const Icon(Icons.remove_circle_outline),
-              ),
-              SizedBox(
-                width: 24,
-                child: Text(
-                  '${_cart[product.id]}',
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(fontWeight: FontWeight.w700),
-                ),
-              ),
-              IconButton(
-                visualDensity: VisualDensity.compact,
-                onPressed: () => _changeQuantity(product, 1),
-                icon: const Icon(Icons.add_circle_outline),
-              ),
-            ],
-          ),
-        ],
-      ),
-    ),
-  );
-
-  Widget _buildOrders() {
-    return AnimatedBuilder(
-      animation: _orders,
-      builder: (context, _) {
-        final state = _orders.state;
-        if (state.isLoading && state.orders.isEmpty) {
-          return const Center(child: CircularProgressIndicator());
-        }
-        if (state.error != null && state.orders.isEmpty) {
-          return _emptyPanel(
-            'Belum ada pesanan',
-            'Pesanan yang dibuat akan tampil di sini.',
-            Icons.receipt_long_outlined,
-          );
-        }
-
-        final now = DateTime.now();
-        final visibleOrders = state.orders.where((order) {
-          if (_orderStatusFilter != 'all' &&
-              order.status != _orderStatusFilter) {
-            return false;
-          }
-          if (_orderDateFilter == 'today') {
-            return order.createdAt.year == now.year &&
-                order.createdAt.month == now.month &&
-                order.createdAt.day == now.day;
-          }
-          if (_orderDateFilter == 'month') {
-            return order.createdAt.year == now.year &&
-                order.createdAt.month == now.month;
-          }
-          if (_orderDateFilter == 'year') {
-            return order.createdAt.year == now.year;
-          }
-          if (_orderDateFilter == 'custom' && _customFilterDate != null) {
-            return order.createdAt.year == _customFilterDate!.year &&
-                order.createdAt.month == _customFilterDate!.month &&
-                order.createdAt.day == _customFilterDate!.day;
-          }
-          return true;
-        }).toList();
-
-        return RefreshIndicator(
-          onRefresh: _reloadOrders,
-          child: ListView(
-            padding: const EdgeInsets.fromLTRB(18, 18, 18, 24),
-            children: [
-              _adminHeading(_isAdmin ? 'Kelola pesanan' : 'Pesanan saya'),
-              const SizedBox(height: 4),
-              DropdownButtonFormField<String>(
-                value: _orderDateFilter,
-                decoration: const InputDecoration(
-                  labelText: 'Filter Berdasarkan Tanggal',
-                  prefixIcon: Icon(Icons.calendar_month_outlined),
-                ),
-                items: [
-                  const DropdownMenuItem(
-                    value: 'all',
-                    child: Text('Semua Tanggal'),
-                  ),
-                  const DropdownMenuItem(
-                    value: 'today',
-                    child: Text('Hari Ini'),
-                  ),
-                  const DropdownMenuItem(
-                    value: 'month',
-                    child: Text('Bulan Ini'),
-                  ),
-                  const DropdownMenuItem(
-                    value: 'year',
-                    child: Text('Tahun Ini'),
-                  ),
-                  DropdownMenuItem(
-                    value: 'custom',
-                    child: Text(
-                      _customFilterDate != null
-                          ? 'Pilih: ${DateFormat('dd MMM yyyy').format(_customFilterDate!)}'
-                          : 'Pilih Tanggal Khusus...',
-                    ),
-                  ),
-                ],
-                onChanged: (value) async {
-                  if (value == null) return;
-                  if (value == 'custom') {
-                    final picked = await showDatePicker(
-                      context: context,
-                      initialDate: _customFilterDate ?? DateTime.now(),
-                      firstDate: DateTime(2020),
-                      lastDate: DateTime.now(),
-                    );
-                    if (picked != null) {
-                      setState(() {
-                        _customFilterDate = picked;
-                        _orderDateFilter = 'custom';
-                      });
-                    }
-                  } else {
-                    setState(() {
-                      _orderDateFilter = value;
-                    });
-                  }
-                },
-              ),
-              const SizedBox(height: 12),
-              _orderStatusChips(),
-              const SizedBox(height: 14),
-              if (state.error != null) _inlineError(state.error!),
-              if (visibleOrders.isEmpty)
-                const Padding(
-                  padding: EdgeInsets.all(28),
-                  child: Center(
-                    child: Text('Tidak ada pesanan untuk filter ini.'),
-                  ),
-                )
-              else
-                for (final order in visibleOrders)
-                  OrderCard(
-                    order: order,
-                    isAdmin: _isAdmin,
-                    moneyFormatter: _money,
-                    onShowMidtransDetails: () => _showMidtransDetailsDialog(order),
-                    onBuyAgain: () => _buyAgain(order),
-                    onUpdateStatus: (val) => _updateOrderStatus(order.id, val),
-                    onSimulatePayment: () => _simulatePayment(order),
-                  ),
-            ],
-          ),
-        );
-      },
-    );
-  }
-
-  /// Chips filter status pesanan; dipakai juga oleh pintasan di tab Akun.
-  Widget _orderStatusChips() {
-    return SingleChildScrollView(
-      scrollDirection: Axis.horizontal,
-      child: Row(
-        children: [
-          for (final entry in _orderStatusFilters.entries) ...[
-            ChoiceChip(
-              label: Text(entry.value),
-              selected: _orderStatusFilter == entry.key,
-              onSelected: (_) =>
-                  setState(() => _orderStatusFilter = entry.key),
-            ),
-            const SizedBox(width: 8),
-          ],
-        ],
-      ),
-    );
-  }
-
-  /// Buka tab Pesanan dengan filter status tertentu (dipakai pintasan Akun).
   void _openOrdersWithStatus(String status) {
     setState(() {
       _orderStatusFilter = status;
@@ -1485,421 +800,6 @@ class _StorePageState extends State<StorePage> {
     });
     _reloadOrders();
   }
-
-  Widget _buildCustomers() {
-    if (_panelLoading && _customers.isEmpty) {
-      return const Center(child: CircularProgressIndicator());
-    }
-    if (_panelError != null && _customers.isEmpty) {
-      return _errorPanel(_panelError!, _loadCustomers);
-    }
-    return RefreshIndicator(
-      onRefresh: _loadCustomers,
-      child: ListView(
-        padding: const EdgeInsets.fromLTRB(18, 18, 18, 24),
-        children: [
-          _adminHeading('Pelanggan'),
-          if (_panelError != null) _inlineError(_panelError!),
-          if (_customers.isEmpty)
-            const Padding(
-              padding: EdgeInsets.all(28),
-              child: Text('Belum ada pelanggan terdaftar.'),
-            ),
-          for (final customer in _customers)
-            Card(
-              margin: const EdgeInsets.only(bottom: 9),
-              child: ListTile(
-                leading: CircleAvatar(
-                  child: Text(customer.name.isEmpty ? '?' : customer.name[0]),
-                ),
-                title: Text(customer.name),
-                subtitle: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      [
-                        customer.email,
-                        customer.phone,
-                      ].where((item) => item.isNotEmpty).join(' · '),
-                    ),
-                    if (customer.formattedAddress.isNotEmpty)
-                      Padding(
-                        padding: const EdgeInsets.only(top: 2),
-                        child: Text(
-                          'Alamat: ${customer.formattedAddress}',
-                          style: const TextStyle(
-                            color: AppColors.textSecondary,
-                            fontSize: 12,
-                          ),
-                        ),
-                      ),
-                  ],
-                ),
-                trailing: IconButton(
-                  tooltip: 'Edit pelanggan & alamat',
-                  onPressed: () => _editCustomer(customer),
-                  icon: const Icon(Icons.edit_outlined),
-                ),
-              ),
-            ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildReports() {
-    return ListView(
-      padding: const EdgeInsets.fromLTRB(18, 18, 18, 30),
-      children: [
-        _adminHeading('Ringkasan penjualan'),
-        SegmentedButton<String>(
-          segments: const [
-            ButtonSegment(value: 'month', label: Text('Bulanan')),
-            ButtonSegment(value: 'year', label: Text('Tahunan')),
-          ],
-          selected: {_reportPeriod},
-          onSelectionChanged: (selection) {
-            setState(() {
-              _reportPeriod = selection.first;
-              _reportValue = _reportPeriod == 'month'
-                  ? DateFormat('yyyy-MM').format(DateTime.now())
-                  : DateFormat('yyyy').format(DateTime.now());
-            });
-            _loadReport();
-          },
-        ),
-        const SizedBox(height: 14),
-        if (_reportPeriod == 'month')
-          OutlinedButton.icon(
-            onPressed: _chooseReportMonth,
-            icon: const Icon(Icons.calendar_month_outlined),
-            label: Text(_reportValue),
-          )
-        else
-          DropdownButtonFormField<String>(
-            initialValue: _reportValue,
-            decoration: const InputDecoration(labelText: 'Tahun laporan'),
-            items: [
-              for (
-                var year = DateTime.now().year;
-                year >= DateTime.now().year - 4;
-                year--
-              )
-                DropdownMenuItem(value: '$year', child: Text('$year')),
-            ],
-            onChanged: (value) {
-              if (value == null) return;
-              setState(() => _reportValue = value);
-              _loadReport();
-            },
-          ),
-        const SizedBox(height: 14),
-        if (_panelLoading)
-          const Center(
-            child: Padding(
-              padding: EdgeInsets.all(20),
-              child: CircularProgressIndicator(),
-            ),
-          )
-        else if (_panelError != null)
-          _inlineError(_panelError!)
-        else if (_report != null) ...[
-          Row(
-            children: [
-              Expanded(
-                child: _metricCard(
-                  'Saldo Midtrans',
-                  _money(_report!.midtransRevenueCents),
-                  Icons.account_balance_wallet_rounded,
-                ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: _metricCard(
-                  'Penjualan COD',
-                  _money(_report!.codRevenueCents),
-                  Icons.payments_outlined,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 10),
-          Row(
-            children: [
-              Expanded(
-                child: _metricCard(
-                  'Omzet Total',
-                  _money(_report!.revenueCents),
-                  Icons.monetization_on_outlined,
-                ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: _metricCard(
-                  'Total Pesanan',
-                  '${_report!.orderCount}',
-                  Icons.receipt_long_outlined,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 16),
-          _reportCard(
-            title: 'Kategori paling sering dibeli',
-            rows: _report!.topCategories,
-          ),
-          const SizedBox(height: 12),
-          _reportCard(
-            title: 'Kebutuhan pelanggan',
-            rows: _report!.needTypeTotals.map((row) {
-              final label = row.label == 'daily_need'
-                  ? 'Daily need'
-                  : 'Daily essentials';
-              return ReportRow(label: label, quantity: row.quantity);
-            }).toList(),
-          ),
-          const SizedBox(height: 20),
-          Card(
-            color: AppColors.primaryBg,
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    'Penarikan Dana (Withdraw Iris)',
-                    style: TextStyle(
-                      fontWeight: FontWeight.w700,
-                      fontSize: 15,
-                      color: AppColors.textPrimary,
-                    ),
-                  ),
-                  const SizedBox(height: 6),
-                  const Text(
-                    'Tarik saldo hasil penjualan Midtrans langsung ke rekening bank Anda.',
-                    style: TextStyle(
-                      fontSize: 13,
-                      color: AppColors.textSecondary,
-                    ),
-                  ),
-                  const SizedBox(height: 14),
-                  FilledButton.icon(
-                    onPressed: _openWithdrawDialog,
-                    icon: const Icon(Icons.account_balance_rounded),
-                    label: const Text('Input Rekening & Tarik Dana'),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ],
-      ],
-    );
-  }
-
-  Widget _buildShippingAdmin() {
-    final config = _shippingConfig;
-    if (_panelLoading && config == null) {
-      return const Center(child: CircularProgressIndicator());
-    }
-    if (_panelError != null && config == null) {
-      return _errorPanel(_panelError!, _loadShippingConfig);
-    }
-    return RefreshIndicator(
-      onRefresh: _loadShippingConfig,
-      child: ListView(
-        padding: const EdgeInsets.fromLTRB(18, 18, 18, 30),
-        children: [
-          _adminHeading('Ongkos kirim'),
-          if (_panelError != null) _inlineError(_panelError!),
-          _shippingSettingsCard(config?.settings ?? const ShippingSettings()),
-          const SizedBox(height: 16),
-          _shippingZonesCard(config?.zones ?? const []),
-          const SizedBox(height: 16),
-          _shippingAreasCard(config?.areas ?? const []),
-        ],
-      ),
-    );
-  }
-
-  Widget _shippingSectionCard({
-    required String title,
-    required String subtitle,
-    required List<Widget> children,
-    Widget? action,
-  }) => Card(
-    child: Padding(
-      padding: const EdgeInsets.all(16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Expanded(
-                child: Text(
-                  title,
-                  style: const TextStyle(
-                    fontWeight: FontWeight.w700,
-                    fontSize: 15,
-                  ),
-                ),
-              ),
-              if (action != null) action,
-            ],
-          ),
-          const SizedBox(height: 6),
-          Text(
-            subtitle,
-            style: const TextStyle(
-              fontSize: 13,
-              color: AppColors.textSecondary,
-            ),
-          ),
-          const SizedBox(height: 12),
-          ...children,
-        ],
-      ),
-    ),
-  );
-
-  Widget _shippingSettingsCard(ShippingSettings settings) => _shippingSectionCard(
-    title: 'Titik asal & tarif bawaan',
-    subtitle:
-        'Tarif bawaan dipakai bila wilayah tujuan belum terdaftar. Koordinat toko hanya perlu diisi kalau mau pakai zona jarak.',
-    action: IconButton(
-      tooltip: 'Ubah pengaturan',
-      onPressed: _editShippingSettings,
-      icon: const Icon(Icons.edit_outlined),
-    ),
-    children: [
-      _shippingInfoRow(
-        'Koordinat asal',
-        settings.originLatitude == 0 && settings.originLongitude == 0
-            ? 'Belum diatur'
-            : '${settings.originLatitude}, ${settings.originLongitude}',
-      ),
-      const SizedBox(height: 6),
-      _shippingInfoRow('Tarif bawaan', _money(settings.defaultFeeCents)),
-    ],
-  );
-
-  Widget _shippingZonesCard(List<ShippingZone> zones) => _shippingSectionCard(
-    title: 'Zona jarak (opsional)',
-    subtitle:
-        'Tarif tetap per rentang jarak (km). Boleh dilewati jika cukup memakai tarif per wilayah.',
-    action: TextButton.icon(
-      onPressed: () => _editShippingZone(),
-      icon: const Icon(Icons.add_rounded),
-      label: const Text('Tambah'),
-    ),
-    children: [
-      if (zones.isEmpty)
-        const Text('Belum ada zona. Ongkir memakai tarif bawaan.')
-      else
-        for (final zone in zones)
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: 4),
-            child: Row(
-              children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        zone.name.isEmpty
-                            ? '${zone.minKm.toStringAsFixed(0)} - ${zone.maxKm.toStringAsFixed(0)} km'
-                            : zone.name,
-                        style: const TextStyle(fontWeight: FontWeight.w600),
-                      ),
-                      Text(
-                        '${zone.minKm.toStringAsFixed(1)} - ${zone.maxKm.toStringAsFixed(1)} km · ${_money(zone.feeCents)}',
-                        style: const TextStyle(
-                          fontSize: 12,
-                          color: AppColors.textSecondary,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                IconButton(
-                  tooltip: 'Ubah zona',
-                  onPressed: () => _editShippingZone(zone),
-                  icon: const Icon(Icons.edit_outlined),
-                ),
-                IconButton(
-                  tooltip: 'Hapus zona',
-                  onPressed: () => _deleteShippingZone(zone),
-                  icon: const Icon(Icons.delete_outline),
-                ),
-              ],
-            ),
-          ),
-    ],
-  );
-
-  Widget _shippingAreasCard(List<ShippingArea> areas) => _shippingSectionCard(
-    title: 'Wilayah tujuan',
-    subtitle:
-        'Cukup isi kota/kecamatan dan tarif ongkirnya — tanpa perlu koordinat. Sistem mencocokkan kota & kecamatan yang dipilih pembeli.',
-    action: TextButton.icon(
-      onPressed: () => _editShippingArea(),
-      icon: const Icon(Icons.add_rounded),
-      label: const Text('Tambah'),
-    ),
-    children: [
-      if (areas.isEmpty)
-        const Text('Belum ada wilayah. Tambahkan kota/kecamatan beserta tarif ongkirnya.')
-      else
-        for (final area in areas)
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: 4),
-            child: Row(
-              children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        area.district.isEmpty
-                            ? area.city
-                            : '${area.district}, ${area.city}',
-                        style: const TextStyle(fontWeight: FontWeight.w600),
-                      ),
-                      Text(
-                        area.feeCents > 0
-                            ? 'Tarif ${_money(area.feeCents)}'
-                            : 'Tarif belum diatur',
-                        style: const TextStyle(
-                          fontSize: 12,
-                          color: AppColors.textSecondary,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                IconButton(
-                  tooltip: 'Ubah wilayah',
-                  onPressed: () => _editShippingArea(area),
-                  icon: const Icon(Icons.edit_outlined),
-                ),
-                IconButton(
-                  tooltip: 'Hapus wilayah',
-                  onPressed: () => _deleteShippingArea(area),
-                  icon: const Icon(Icons.delete_outline),
-                ),
-              ],
-            ),
-          ),
-    ],
-  );
-
-  Widget _shippingInfoRow(String label, String value) => Row(
-    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-    children: [
-      Text(label, style: const TextStyle(color: AppColors.textSecondary)),
-      Text(value, style: const TextStyle(fontWeight: FontWeight.w600)),
-    ],
-  );
 
   Future<void> _editShippingSettings() async {
     final settings = _shippingConfig?.settings ?? const ShippingSettings();
@@ -2314,447 +1214,6 @@ class _StorePageState extends State<StorePage> {
     if (parsed == null || parsed < 0) return 'Isi angka yang valid';
     return null;
   }
-
-  Widget _metricCard(String title, String value, IconData icon) => Card(
-    child: Padding(
-      padding: const EdgeInsets.all(16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Icon(icon, color: AppColors.primary),
-          const SizedBox(height: 12),
-          Text(title, style: Theme.of(context).textTheme.bodySmall),
-          const SizedBox(height: 4),
-          Text(
-            value,
-            style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 16),
-          ),
-        ],
-      ),
-    ),
-  );
-
-  Widget _reportCard({required String title, required List<ReportRow> rows}) =>
-      Card(
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(title, style: const TextStyle(fontWeight: FontWeight.w700)),
-              const SizedBox(height: 10),
-              if (rows.isEmpty) const Text('Belum ada data pada periode ini.'),
-              for (final row in rows)
-                Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 7),
-                  child: Row(
-                    children: [
-                      Expanded(child: Text(row.label)),
-                      Text(
-                        '${row.quantity} item',
-                        style: const TextStyle(fontWeight: FontWeight.w700),
-                      ),
-                    ],
-                  ),
-                ),
-            ],
-          ),
-        ),
-      );
-
-  Widget _buildAccountTab() {
-    final state = _orders.state;
-    final userOrders = state.orders;
-
-    final totalSpentCents = userOrders
-        .where((o) => o.status != 'cancelled')
-        .fold<int>(0, (sum, o) => sum + o.totalCents);
-
-    final pendingCount =
-        userOrders.where((o) => o.status == 'pending').length;
-    final processingCount =
-        userOrders.where((o) => o.status == 'processing').length;
-    final shippingCount =
-        userOrders.where((o) => o.status == 'shipping').length;
-    final completedCount =
-        userOrders.where((o) => o.status == 'completed').length;
-
-    return ListView(
-      padding: const EdgeInsets.fromLTRB(18, 18, 18, 30),
-      children: [
-        Card(
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Row(
-              children: [
-                CircleAvatar(
-                  radius: 28,
-                  backgroundColor: AppColors.primaryBg,
-                  child: Text(
-                    _user.name.isEmpty ? '?' : _user.name[0].toUpperCase(),
-                    style: const TextStyle(
-                      fontSize: 22,
-                      fontWeight: FontWeight.w700,
-                      color: AppColors.primary,
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 14),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        _user.name,
-                        style: const TextStyle(
-                          fontWeight: FontWeight.w700,
-                          fontSize: 17,
-                        ),
-                      ),
-                      const SizedBox(height: 2),
-                      Text(
-                        _user.email,
-                        style: const TextStyle(
-                          color: AppColors.textSecondary,
-                          fontSize: 13,
-                        ),
-                      ),
-                      if (_user.phone.isNotEmpty) ...[
-                        const SizedBox(height: 2),
-                        Text(
-                          _user.phone,
-                          style: const TextStyle(
-                            color: AppColors.textSecondary,
-                            fontSize: 12,
-                          ),
-                        ),
-                      ],
-                    ],
-                  ),
-                ),
-                IconButton(
-                  tooltip: 'Edit Profil',
-                  icon: const Icon(Icons.edit_outlined),
-                  onPressed: _openProfile,
-                ),
-              ],
-            ),
-          ),
-        ),
-        const SizedBox(height: 14),
-        Card(
-          color: AppColors.primaryBg,
-          child: Padding(
-            padding: const EdgeInsets.all(18),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    const Icon(
-                      Icons.account_balance_wallet_rounded,
-                      color: AppColors.primary,
-                      size: 20,
-                    ),
-                    const SizedBox(width: 8),
-                    Text(
-                      'Total Pengeluaran',
-                      style: TextStyle(
-                        fontWeight: FontWeight.w600,
-                        color: AppColors.textSecondary,
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  _money(totalSpentCents),
-                  style: const TextStyle(
-                    fontSize: 24,
-                    fontWeight: FontWeight.w700,
-                    color: AppColors.primary,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                const Text(
-                  'Total akumulasi belanja Anda di Udayana Market.',
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: AppColors.textSecondary,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-        const SizedBox(height: 18),
-        Text(
-          'Status Transaksi Saya',
-          style: Theme.of(context)
-              .textTheme
-              .titleMedium
-              ?.copyWith(fontWeight: FontWeight.w700),
-        ),
-        const SizedBox(height: 10),
-        Row(
-          children: [
-            Expanded(
-              child: _statusShortcutCard(
-                'Belum Bayar',
-                pendingCount,
-                Icons.hourglass_top_rounded,
-                AppColors.warning,
-                () => _openOrdersWithStatus('pending'),
-              ),
-            ),
-            const SizedBox(width: 8),
-            Expanded(
-              child: _statusShortcutCard(
-                'Diproses',
-                processingCount,
-                Icons.inventory_2_outlined,
-                AppColors.primary,
-                () => _openOrdersWithStatus('processing'),
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 8),
-        Row(
-          children: [
-            Expanded(
-              child: _statusShortcutCard(
-                'Dikirim',
-                shippingCount,
-                Icons.local_shipping_outlined,
-                AppColors.primary,
-                () => _openOrdersWithStatus('shipping'),
-              ),
-            ),
-            const SizedBox(width: 8),
-            Expanded(
-              child: _statusShortcutCard(
-                'Selesai',
-                completedCount,
-                Icons.check_circle_outline,
-                AppColors.success,
-                () => _openOrdersWithStatus('completed'),
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 20),
-        Card(
-          child: Column(
-            children: [
-              ListTile(
-                leading: const Icon(Icons.person_outline_rounded),
-                title: const Text('Profil Saya'),
-                subtitle: const Text('Ubah nama, email, dan kata sandi'),
-                trailing: const Icon(Icons.chevron_right_rounded),
-                onTap: _openProfile,
-              ),
-              const Divider(height: 1),
-              ListTile(
-                leading: const Icon(Icons.location_on_outlined),
-                title: const Text('Alamat Pengiriman Saya'),
-                subtitle: const Text('Kelola dan pilih alamat pengiriman'),
-                trailing: const Icon(Icons.chevron_right_rounded),
-                onTap: _openAddressSelectionDialog,
-              ),
-            ],
-          ),
-        ),
-        const SizedBox(height: 20),
-        OutlinedButton.icon(
-          style: OutlinedButton.styleFrom(
-            foregroundColor: AppColors.error,
-            side: const BorderSide(color: AppColors.error),
-            padding: const EdgeInsets.symmetric(vertical: 14),
-          ),
-          onPressed: _signOut,
-          icon: const Icon(Icons.logout_rounded),
-          label: const Text('Keluar dari Akun'),
-        ),
-      ],
-    );
-  }
-
-  Widget _statusShortcutCard(
-    String title,
-    int count,
-    IconData icon,
-    Color color,
-    VoidCallback onTap,
-  ) {
-    return Card(
-      child: InkWell(
-        borderRadius: AppRadius.cardAll,
-        onTap: onTap,
-        child: Padding(
-          padding: const EdgeInsets.all(14),
-          child: Column(
-            children: [
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Icon(icon, color: color, size: 22),
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 8,
-                      vertical: 2,
-                    ),
-                    decoration: BoxDecoration(
-                      color: color.withValues(alpha: 0.15),
-                      borderRadius: AppRadius.tagAll,
-                    ),
-                    child: Text(
-                      '$count',
-                      style: TextStyle(
-                        fontWeight: FontWeight.w700,
-                        color: color,
-                        fontSize: 12,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 10),
-              Align(
-                alignment: Alignment.centerLeft,
-                child: Text(
-                  title,
-                  style: const TextStyle(
-                    fontWeight: FontWeight.w600,
-                    fontSize: 13,
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _adminHeading(String title) => Padding(
-    padding: const EdgeInsets.only(bottom: 14),
-    child: Text(
-      title,
-      style: Theme.of(context).textTheme.headlineSmall
-          ?.copyWith(fontWeight: FontWeight.w700),
-    ),
-  );
-
-  Widget _summaryRow(String label, String value, {bool bold = false}) => Row(
-    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-    children: [
-      Text(label, style: const TextStyle(color: AppColors.textSecondary)),
-      Text(
-        value,
-        style: TextStyle(
-          fontWeight: bold ? FontWeight.w700 : FontWeight.w600,
-          color: bold ? AppColors.textPrimary : null,
-        ),
-      ),
-    ],
-  );
-
-  Widget _primaryButton({
-    required String label,
-    required VoidCallback onPressed,
-  }) => SizedBox(
-    width: double.infinity,
-    child: FilledButton(
-      onPressed: onPressed,
-      style: FilledButton.styleFrom(
-        padding: const EdgeInsets.symmetric(vertical: 14),
-      ),
-      child: Text(label),
-    ),
-  );
-
-  Widget _statusChip(String status) {
-    final (label, color) = switch (status) {
-      'pending' => ('Menunggu Pembayaran', const Color(0xFF9A6900)),
-      'processing' => ('Diproses', const Color(0xFF9A6900)),
-      'shipping' => ('Dikirim', const Color(0xFF0C6AB2)),
-      'completed' => ('Selesai', const Color(0xFF167D62)),
-      'cancelled' => ('Dibatalkan', const Color(0xFFB42318)),
-      _ => ('Menunggu Pembayaran', const Color(0xFF52606D)),
-    };
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.1),
-        borderRadius: AppRadius.tagAll,
-      ),
-      child: Text(
-        label,
-        style: TextStyle(
-          color: color,
-          fontSize: 11,
-          fontWeight: FontWeight.w700,
-        ),
-      ),
-    );
-  }
-
-  Widget _emptyPanel(String title, String subtitle, IconData icon) => Center(
-    child: Padding(
-      padding: const EdgeInsets.all(30),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, size: 52, color: AppColors.textTertiary),
-          const SizedBox(height: 14),
-          Text(
-            title,
-            style: const TextStyle(fontWeight: FontWeight.w700),
-          ),
-          const SizedBox(height: 5),
-          Text(
-            subtitle,
-            textAlign: TextAlign.center,
-            style: const TextStyle(color: AppColors.textSecondary),
-          ),
-        ],
-      ),
-    ),
-  );
-
-  Widget _errorPanel(String error, Future<void> Function() retry) => Center(
-    child: Padding(
-      padding: const EdgeInsets.all(28),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          const Icon(Icons.cloud_off_outlined, size: 48),
-          const SizedBox(height: 12),
-          const Text('Tidak dapat memuat data'),
-          const SizedBox(height: 6),
-          Text(error, textAlign: TextAlign.center),
-          const SizedBox(height: 14),
-          OutlinedButton.icon(
-            onPressed: retry,
-            icon: const Icon(Icons.refresh_rounded),
-            label: const Text('Coba lagi'),
-          ),
-        ],
-      ),
-    ),
-  );
-
-  Widget _inlineError(String message) => Container(
-    margin: const EdgeInsets.symmetric(vertical: 8),
-    padding: const EdgeInsets.all(12),
-    decoration: BoxDecoration(
-      color: AppColors.error.withValues(alpha: 0.08),
-      borderRadius: AppRadius.controlAll,
-      border: Border.all(color: AppColors.error.withValues(alpha: 0.25)),
-    ),
-    child: Text(message, style: const TextStyle(color: AppColors.error)),
-  );
 
   Future<void> _syncCartToBackend() async {
     if (!_isGuest && !_isAdmin) {
@@ -3484,11 +1943,11 @@ class _StorePageState extends State<StorePage> {
                     ),
                     child: Column(
                       children: [
-                        _summaryRow('Subtotal', _money(subtotal)),
+                        summaryRow('Subtotal', _money(subtotal)),
                         const SizedBox(height: 6),
-                        _summaryRow('Ongkos kirim', _shippingFeeLabel),
+                        summaryRow('Ongkos kirim', _shippingFeeLabel),
                         const Divider(height: 20),
-                        _summaryRow(
+                        summaryRow(
                           'Total pembayaran',
                           _money(total),
                           bold: true,
@@ -3497,7 +1956,7 @@ class _StorePageState extends State<StorePage> {
                     ),
                   ),
                   const SizedBox(height: 20),
-                  _primaryButton(
+                  primaryButton(
                     label: 'Buat Pesanan & Antar Ke Alamat',
                     onPressed: () => Navigator.pop(context, true),
                   ),
@@ -3610,7 +2069,7 @@ class _StorePageState extends State<StorePage> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(
+              const Text(
                 'Nominal Pembayaran:',
                 style: TextStyle(
                   fontSize: 12,
@@ -3627,7 +2086,7 @@ class _StorePageState extends State<StorePage> {
                 ),
               ),
               const SizedBox(height: 12),
-              Text(
+              const Text(
                 'Item / Barang:',
                 style: TextStyle(
                   fontSize: 12,
@@ -3796,6 +2255,238 @@ class _StorePageState extends State<StorePage> {
   Future<void> _updateOrderStatus(int id, String status) async {
     await _orders.dispatch(OrderStatusChangeRequested(id, status));
     if (_orders.state.error != null) _showMessage(_orders.state.error!);
+  }
+
+  Future<void> _requestOrderCancellation(int orderId, String status) async {
+    final isPaid = status == 'processing';
+    final formKey = GlobalKey<FormState>();
+    String selectedReason = 'Pesanan salah / ingin ubah produk';
+    final customReasonCtrl = TextEditingController();
+    final bankCtrl = TextEditingController(
+      text: _user.bankName.isNotEmpty ? _user.bankName.toLowerCase() : 'bca',
+    );
+    final nameCtrl = TextEditingController(
+      text: _user.accountName.isNotEmpty ? _user.accountName : _user.name,
+    );
+    final accCtrl = TextEditingController(text: _user.accountNumber);
+
+    final reasons = [
+      'Pesanan salah / ingin ubah produk',
+      'Salah alamat pengiriman',
+      'Menemukan harga lebih murah di tempat lain',
+      'Ingin ganti metode pembayaran',
+      'Lainnya',
+    ];
+
+    final confirmed = await showModalBottomSheet<bool>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setModalState) => Padding(
+          padding: EdgeInsets.only(
+            bottom: MediaQuery.viewInsetsOf(context).bottom,
+          ),
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.fromLTRB(22, 8, 22, 24),
+            child: Form(
+              key: formKey,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Text(
+                    isPaid ? 'Ajukan Pembatalan & Refund' : 'Batalkan Pesanan',
+                    style: Theme.of(
+                      context,
+                    ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    isPaid
+                        ? 'Pesanan ini sudah dibayar. Masukkan alasan pembatalan dan rekening bank Anda untuk pencairan dana otomatis via Midtrans IRIS.'
+                        : 'Pilih alasan pembatalan pesanan Anda.',
+                    style: const TextStyle(
+                      fontSize: 12,
+                      color: AppColors.textSecondary,
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                  const Text(
+                    'Alasan Pembatalan:',
+                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                  ),
+                  const SizedBox(height: 4),
+                  for (final reason in reasons)
+                    RadioListTile<String>(
+                      title: Text(reason, style: const TextStyle(fontSize: 13)),
+                      value: reason,
+                      groupValue: selectedReason,
+                      contentPadding: EdgeInsets.zero,
+                      visualDensity: VisualDensity.compact,
+                      onChanged: (val) {
+                        if (val != null) {
+                          setModalState(() => selectedReason = val);
+                        }
+                      },
+                    ),
+                  if (selectedReason == 'Lainnya') ...[
+                    const SizedBox(height: 8),
+                    TextFormField(
+                      controller: customReasonCtrl,
+                      maxLines: 2,
+                      decoration: const InputDecoration(
+                        labelText: 'Tuliskan alasan pembatalan',
+                      ),
+                      validator: (v) =>
+                          (v == null || v.trim().isEmpty) ? 'Alasan wajib diisi' : null,
+                    ),
+                  ],
+                  if (isPaid) ...[
+                    const SizedBox(height: 16),
+                    const Divider(),
+                    const SizedBox(height: 8),
+                    const Text(
+                      'Informasi Rekening Bank (untuk Refund):',
+                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                    ),
+                    const SizedBox(height: 10),
+                    DropdownButtonFormField<String>(
+                      value:
+                          [
+                                'bca',
+                                'mandiri',
+                                'bni',
+                                'bri',
+                                'permata',
+                                'cimb',
+                              ].contains(bankCtrl.text.toLowerCase())
+                              ? bankCtrl.text.toLowerCase()
+                              : 'bca',
+                      decoration: const InputDecoration(
+                        labelText: 'Nama Bank Refund',
+                      ),
+                      items: const [
+                        DropdownMenuItem(
+                          value: 'bca',
+                          child: Text('BCA (Bank Central Asia)'),
+                        ),
+                        DropdownMenuItem(
+                          value: 'mandiri',
+                          child: Text('Bank Mandiri'),
+                        ),
+                        DropdownMenuItem(
+                          value: 'bni',
+                          child: Text('BNI (Bank Negara Indonesia)'),
+                        ),
+                        DropdownMenuItem(
+                          value: 'bri',
+                          child: Text('BRI (Bank Rakyat Indonesia)'),
+                        ),
+                        DropdownMenuItem(
+                          value: 'permata',
+                          child: Text('Bank Permata'),
+                        ),
+                        DropdownMenuItem(
+                          value: 'cimb',
+                          child: Text('CIMB Niaga'),
+                        ),
+                      ],
+                      onChanged: (val) {
+                        if (val != null) bankCtrl.text = val;
+                      },
+                    ),
+                    const SizedBox(height: 10),
+                    TextFormField(
+                      controller: nameCtrl,
+                      decoration: const InputDecoration(
+                        labelText: 'Nama Pemilik Rekening',
+                      ),
+                      validator: (v) =>
+                          (v == null || v.trim().isEmpty) ? 'Wajib diisi' : null,
+                    ),
+                    const SizedBox(height: 10),
+                    TextFormField(
+                      controller: accCtrl,
+                      keyboardType: TextInputType.number,
+                      decoration: const InputDecoration(
+                        labelText: 'Nomor Rekening',
+                      ),
+                      validator: (v) =>
+                          (v == null || v.trim().isEmpty) ? 'Wajib diisi' : null,
+                    ),
+                  ],
+                  const SizedBox(height: 20),
+                  FilledButton(
+                    style: FilledButton.styleFrom(
+                      backgroundColor: AppColors.error,
+                    ),
+                    onPressed: () {
+                      if (selectedReason == 'Lainnya') {
+                        if (!formKey.currentState!.validate()) return;
+                      }
+                      Navigator.pop(context, true);
+                    },
+                    child: Text(
+                      isPaid
+                          ? 'Kirim Pengajuan Batal & Refund'
+                          : 'Konfirmasi Batalkan Pesanan',
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    if (confirmed != true) return;
+
+    final finalReason = selectedReason == 'Lainnya'
+        ? customReasonCtrl.text.trim()
+        : selectedReason;
+
+    await _orders.dispatch(
+      OrderCancellationRequested(orderId, {
+        'reason': finalReason,
+        'bank_name': isPaid ? bankCtrl.text.trim() : '',
+        'account_name': isPaid ? nameCtrl.text.trim() : '',
+        'account_number': isPaid ? accCtrl.text.trim() : '',
+      }),
+    );
+    if (_orders.state.error != null) {
+      _showMessage(_orders.state.error!);
+    } else {
+      _showMessage(
+        isPaid
+            ? 'Pengajuan pembatalan & refund terkirim. Menunggu persetujuan admin.'
+            : 'Pesanan berhasil diajukan pembatalan.',
+      );
+      await _reloadOrders();
+    }
+  }
+
+  Future<void> _approveCancellation(int orderId) async {
+    try {
+      await widget.services.approveCancellation(orderId);
+      _showMessage(
+        'Pembatalan disetujui & dana dikembalikan otomatis via Midtrans IRIS.',
+      );
+      await _reloadOrders();
+    } on Exception catch (error) {
+      _showMessage(error.toString());
+    }
+  }
+
+  Future<void> _rejectCancellation(int orderId) async {
+    try {
+      await widget.services.rejectCancellation(orderId);
+      _showMessage('Pengajuan pembatalan ditolak. Pesanan dilanjutkan.');
+      await _reloadOrders();
+    } on Exception catch (error) {
+      _showMessage(error.toString());
+    }
   }
 
   Future<void> _loadCustomers() async {
@@ -3976,11 +2667,11 @@ class _StorePageState extends State<StorePage> {
       if (!mounted) return;
       setState(() {
         _homeLayout = layout;
-        _homeLayoutError = null;
       });
     } on Exception catch (error) {
       if (!mounted) return;
-      setState(() => _homeLayoutError = error.toString());
+      // ignore: empty_catches
+      setState(() {});
     }
   }
 
@@ -4378,6 +3069,14 @@ class _StorePageState extends State<StorePage> {
   }
 
   Future<void> _openProductDetail(Product product) async {
+    setState(() {
+      _recentlyViewed.removeWhere((p) => p.id == product.id);
+      _recentlyViewed.insert(0, product);
+      if (_recentlyViewed.length > 10) {
+        _recentlyViewed.removeLast();
+      }
+    });
+
     final catalog = _products.state.products;
     final related = catalog.where((p) => p.id != product.id).toList()
       ..sort((a, b) {
@@ -4398,101 +3097,31 @@ class _StorePageState extends State<StorePage> {
           onOpenProduct: _openProductDetail,
           onQuickAdd: (item) {
             _addToCart(item);
-            _showMessage('${item.name} ditambahkan ke keranjang.');
+            ScaffoldMessenger.of(pageContext).showSnackBar(
+              SnackBar(
+                content: Text('${item.name} ditambahkan ke keranjang.'),
+                duration: const Duration(seconds: 2),
+              ),
+            );
           },
           onAddToCart: () {
             _addToCart(product);
-            _showSwalAddToCartSuccess(pageContext, product, () {
-              Navigator.of(pageContext).pop();
-              setState(() {
-                _tabIndex = 2;
-              });
-            });
+            ScaffoldMessenger.of(pageContext).showSnackBar(
+              SnackBar(
+                content: Text('${product.name} berhasil ditambahkan ke keranjang.'),
+                duration: const Duration(seconds: 2),
+                action: SnackBarAction(
+                  label: 'Keranjang',
+                  onPressed: () {
+                    Navigator.of(pageContext).pop();
+                    setState(() {
+                      _tabIndex = 2;
+                    });
+                  },
+                ),
+              ),
+            );
           },
-        ),
-      ),
-    );
-  }
-
-  void _showSwalAddToCartSuccess(
-    BuildContext pageContext,
-    Product product,
-    VoidCallback onViewCart,
-  ) {
-    showDialog<void>(
-      context: pageContext,
-      builder: (dialogContext) => Dialog(
-        shape: const RoundedRectangleBorder(borderRadius: AppRadius.overlayAll),
-        child: Padding(
-          padding: const EdgeInsets.all(22),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: AppColors.success.withValues(alpha: 0.1),
-                  shape: BoxShape.circle,
-                ),
-                child: const Icon(
-                  Icons.check_circle_rounded,
-                  size: 52,
-                  color: AppColors.success,
-                ),
-              ),
-              const SizedBox(height: 16),
-              Text(
-                'Berhasil Ditambahkan!',
-                style: Theme.of(pageContext)
-                    .textTheme
-                    .titleLarge
-                    ?.copyWith(fontWeight: FontWeight.w700),
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 8),
-              Text(
-                '${product.name} telah berhasil masuk ke keranjang belanja Anda.',
-                textAlign: TextAlign.center,
-                style: const TextStyle(
-                  color: AppColors.textSecondary,
-                  fontSize: 13,
-                ),
-              ),
-              const SizedBox(height: 22),
-              Row(
-                children: [
-                  Expanded(
-                    child: OutlinedButton(
-                      style: OutlinedButton.styleFrom(
-                        shape: const RoundedRectangleBorder(
-                          borderRadius: AppRadius.controlAll,
-                        ),
-                        padding: const EdgeInsets.symmetric(vertical: 12),
-                      ),
-                      onPressed: () => Navigator.pop(dialogContext),
-                      child: const Text('Lanjut Belanja'),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: FilledButton(
-                      style: FilledButton.styleFrom(
-                        shape: const RoundedRectangleBorder(
-                          borderRadius: AppRadius.controlAll,
-                        ),
-                        padding: const EdgeInsets.symmetric(vertical: 12),
-                      ),
-                      onPressed: () {
-                        Navigator.pop(dialogContext);
-                        onViewCart();
-                      },
-                      child: const Text('Lihat Keranjang'),
-                    ),
-                  ),
-                ],
-              ),
-            ],
-          ),
         ),
       ),
     );
@@ -4528,7 +3157,6 @@ class _StorePageState extends State<StorePage> {
       _resetProductFilters();
       setState(() {
         _homeLayout = null;
-        _homeLayoutError = null;
         _user = session.user;
         _tabIndex = 0;
       });
@@ -4558,7 +3186,6 @@ class _StorePageState extends State<StorePage> {
         phone: '',
       );
       _homeLayout = null;
-      _homeLayoutError = null;
       _cart.clear();
       _tabIndex = 0;
     });

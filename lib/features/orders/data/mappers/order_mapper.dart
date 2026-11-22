@@ -25,5 +25,10 @@ class OrderMapper {
     createdAt: model.createdAt,
     customerName: model.customerName,
     midtransResponse: model.midtransResponse,
+    cancellationReason: model.cancellationReason,
+    refundBankName: model.refundBankName,
+    refundAccountName: model.refundAccountName,
+    refundAccountNumber: model.refundAccountNumber,
+    irisPayoutReference: model.irisPayoutReference,
   );
 }

@@ -2,6 +2,10 @@ import 'package:flutter/material.dart';
 
 import '../../../../core/theme/app_theme.dart';
 
+/// Ruang bawah untuk halaman ber-scroll agar elemen terakhir bisa digulir
+/// melewati floating bottom navbar (liquid glass).
+const double kBottomNavInset = 120;
+
 /// Judul section khusus tampilan admin / header umum.
 Widget adminHeading(BuildContext context, String title) => Padding(
       padding: const EdgeInsets.only(bottom: 14),
@@ -69,6 +73,25 @@ Widget statusChip(String status) {
         fontWeight: FontWeight.w700,
       ),
     ),
+  );
+}
+
+/// Visual metode pembayaran: logo bank bila tersedia, jika tidak pakai ikon.
+Widget paymentMethodVisual({
+  required IconData icon,
+  String? logo,
+  double size = 22,
+  Color? color,
+}) {
+  if (logo == null) {
+    return Icon(icon, size: size, color: color);
+  }
+  return Image.asset(
+    logo,
+    width: size,
+    height: size,
+    fit: BoxFit.contain,
+    errorBuilder: (_, _, _) => Icon(icon, size: size, color: color),
   );
 }
 

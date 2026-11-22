@@ -108,7 +108,12 @@ class HomeView extends StatelessWidget {
                 )
               else
                 SliverPadding(
-                  padding: const EdgeInsets.fromLTRB(18, 8, 18, 16),
+                  padding: const EdgeInsets.fromLTRB(
+                    18,
+                    8,
+                    18,
+                    16 + kBottomNavInset,
+                  ),
                   sliver: SliverLayoutBuilder(
                     builder: (context, constraints) {
                       final columns = constraints.crossAxisExtent > 650 ? 3 : 2;
@@ -138,7 +143,12 @@ class HomeView extends StatelessWidget {
               if (state.hasMore)
                 SliverToBoxAdapter(
                   child: Padding(
-                    padding: const EdgeInsets.fromLTRB(18, 0, 18, 24),
+                    padding: const EdgeInsets.fromLTRB(
+                      18,
+                      0,
+                      18,
+                      24 + kBottomNavInset,
+                    ),
                     child: OutlinedButton.icon(
                       onPressed: state.isLoading
                           ? null
@@ -159,7 +169,12 @@ class HomeView extends StatelessWidget {
               else if (visible.isNotEmpty)
                 SliverToBoxAdapter(
                   child: Padding(
-                    padding: const EdgeInsets.fromLTRB(18, 8, 18, 24),
+                    padding: const EdgeInsets.fromLTRB(
+                      18,
+                      8,
+                      18,
+                      24 + kBottomNavInset,
+                    ),
                     child: Center(
                       child: Text(
                         'Menampilkan ${visible.length} dari ${state.total} produk',
@@ -263,6 +278,7 @@ class HomeView extends StatelessWidget {
             ),
           ),
         ],
+        const SliverToBoxAdapter(child: SizedBox(height: kBottomNavInset)),
       ],
     );
   }

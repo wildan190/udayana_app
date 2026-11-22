@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
+import 'package:liquid_glass_bottom_bar/liquid_glass_bottom_bar.dart';
 
 import '../../../../core/di/app_services.dart';
 import '../../../../core/native/cart_math.dart';
@@ -490,6 +491,7 @@ class _StorePageState extends State<StorePage> {
         }
       },
       child: Scaffold(
+        extendBody: true,
         appBar: AppBar(
           titleSpacing: 20,
           title: Row(
@@ -603,89 +605,82 @@ class _StorePageState extends State<StorePage> {
   }
 
   Widget _floatingNavBar() {
-    return SafeArea(
-      top: false,
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-        child: Container(
-          height: 62,
-          decoration: BoxDecoration(
-            color: AppColors.container,
-            borderRadius: AppRadius.overlayAll,
-            border: Border.all(color: AppColors.split),
-            boxShadow: AppShadows.floating,
-          ),
-          child: Row(
-            children: [
-              for (var index = 0; index < _tabs.length; index++)
-                Expanded(child: _navItem(index)),
-            ],
-          ),
+    final icons = _navIcons;
+    final activeIcons = _navActiveIcons;
+    final bottomInset = MediaQuery.of(context).padding.bottom;
+    return MediaQuery.removePadding(
+      context: context,
+      removeBottom: true,
+      child: Container(
+        margin: EdgeInsets.fromLTRB(16, 0, 16, 12 + bottomInset),
+        decoration: BoxDecoration(
+          color: const Color(0xFF0F172A).withValues(alpha: 0.62),
+          borderRadius: BorderRadius.circular(22),
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: LiquidGlassBottomBar(
+          items: [
+            for (var index = 0; index < _tabs.length; index++)
+              LiquidGlassBottomBarItem(
+                icon: icons[index],
+                activeIcon: activeIcons[index],
+                label: _tabs[index],
+                badge: !_isAdmin && index == 2 && _cartCount > 0
+                    ? _cartCount
+                    : null,
+              ),
+          ],
+          currentIndex: _tabIndex,
+          onTap: _selectTab,
+          activeColor: AppColors.primary,
+          margin: EdgeInsets.zero,
+          height: 68,
+          barBlurSigma: 18,
+          activeBlurSigma: 26,
         ),
       ),
     );
   }
 
-  Widget _navItem(int index) {
-    final selected = _tabIndex == index;
-    final color = selected ? AppColors.primary : AppColors.textTertiary;
-    return InkWell(
-      onTap: () => _selectTab(index),
-      borderRadius: AppRadius.overlayAll,
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          _navigationIcon(index, color: color),
-          const SizedBox(height: 3),
-          Text(
-            _tabs[index],
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(
-              fontSize: 11,
-              fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
-              color: color,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
+  List<IconData> get _navIcons => _isAdmin
+      ? const [
+          Icons.inventory_2_outlined,
+          Icons.receipt_long_outlined,
+          Icons.people_outline_rounded,
+          Icons.bar_chart_rounded,
+          Icons.local_shipping_outlined,
+        ]
+      : _isGuest
+      ? const [
+          Icons.storefront_outlined,
+          Icons.category_outlined,
+          Icons.shopping_bag_outlined,
+        ]
+      : const [
+          Icons.storefront_outlined,
+          Icons.category_outlined,
+          Icons.shopping_bag_outlined,
+          Icons.receipt_long_outlined,
+          Icons.person_outline_rounded,
+        ];
 
-  Widget _navigationIcon(int index, {required Color color}) {
-    final icons = _isAdmin
-        ? const [
-            Icons.inventory_2_outlined,
-            Icons.receipt_long_outlined,
-            Icons.people_outline_rounded,
-            Icons.bar_chart_rounded,
-            Icons.local_shipping_outlined,
-          ]
-        : _isGuest
-        ? const [
-            Icons.storefront_outlined,
-            Icons.category_outlined,
-            Icons.shopping_bag_outlined,
-          ]
-        : const [
-            Icons.storefront_outlined,
-            Icons.category_outlined,
-            Icons.shopping_bag_outlined,
-            Icons.receipt_long_outlined,
-            Icons.person_outline_rounded,
-          ];
-    final icon = Icon(icons[index], color: color, size: 23);
-    final cartIndex = 2;
-    if (!_isAdmin && index == cartIndex && _cartCount > 0) {
-      return Badge(
-        label: Text('$_cartCount'),
-        backgroundColor: AppColors.error,
-        textColor: Colors.white,
-        child: icon,
-      );
-    }
-    return icon;
-  }
+  List<IconData> get _navActiveIcons => _isAdmin
+      ? const [
+          Icons.inventory_2,
+          Icons.receipt_long,
+          Icons.people_rounded,
+          Icons.bar_chart_rounded,
+          Icons.local_shipping,
+        ]
+      : _isGuest
+      ? const [Icons.storefront, Icons.category, Icons.shopping_bag]
+      : const [
+          Icons.storefront,
+          Icons.category,
+          Icons.shopping_bag,
+          Icons.receipt_long,
+          Icons.person_rounded,
+        ];
 
   void _submitProductSearch() {
     setState(() {
@@ -736,9 +731,10 @@ class _StorePageState extends State<StorePage> {
                       child: Row(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Icon(
-                            method.icon,
-                            size: 22,
+                          paymentMethodVisual(
+                            icon: method.icon,
+                            logo: method.logo,
+                            size: 24,
                             color: AppColors.primary,
                           ),
                           const SizedBox(width: 12),

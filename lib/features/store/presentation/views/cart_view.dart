@@ -7,12 +7,21 @@ import 'view_helpers.dart';
 
 /// Metode pembayaran yang tersedia.
 class PaymentMethod {
-  const PaymentMethod(this.value, this.label, this.description, this.icon);
+  const PaymentMethod(
+    this.value,
+    this.label,
+    this.description,
+    this.icon, {
+    this.logo,
+  });
 
   final String value;
   final String label;
   final String description;
   final IconData icon;
+
+  /// Path aset logo bank (opsional). Bila null, gunakan [icon].
+  final String? logo;
 }
 
 const List<PaymentMethod> paymentMethods = [
@@ -27,30 +36,35 @@ const List<PaymentMethod> paymentMethods = [
     'Virtual Account Mandiri',
     'Bayar melalui transfer ATM / M-Banking Mandiri.',
     Icons.account_balance_rounded,
+    logo: 'assets/images/bank_logo/mandiri.webp',
   ),
   PaymentMethod(
     'MIDTRANS_BNI',
     'Virtual Account BNI',
     'Bayar melalui transfer ATM / M-Banking BNI.',
     Icons.account_balance_rounded,
+    logo: 'assets/images/bank_logo/bni.png',
   ),
   PaymentMethod(
     'MIDTRANS_BRI',
     'Virtual Account BRI',
     'Bayar melalui transfer ATM / M-Banking BRI.',
     Icons.account_balance_rounded,
+    logo: 'assets/images/bank_logo/bri.png',
   ),
   PaymentMethod(
     'MIDTRANS_PERMATA',
     'Virtual Account Permata',
     'Bayar melalui transfer ATM / M-Banking Permata.',
     Icons.account_balance_rounded,
+    logo: 'assets/images/bank_logo/permata.webp',
   ),
   PaymentMethod(
     'MIDTRANS_CIMB',
     'Virtual Account CIMB Niaga',
     'Bayar melalui transfer ATM / M-Banking CIMB Niaga.',
     Icons.account_balance_rounded,
+    logo: 'assets/images/bank_logo/cimb.png',
   ),
   PaymentMethod(
     'MIDTRANS_QRIS',
@@ -115,7 +129,7 @@ class CartView extends StatelessWidget {
     }
 
     return ListView(
-      padding: const EdgeInsets.fromLTRB(18, 18, 18, 30),
+      padding: const EdgeInsets.fromLTRB(18, 18, 18, 30 + kBottomNavInset),
       children: [
         adminHeading(context, 'Keranjang belanja'),
         for (final product in items) _cartItem(context, product),
@@ -213,9 +227,10 @@ class CartView extends StatelessWidget {
           ),
           child: Row(
             children: [
-              Icon(
-                method.icon,
-                size: 20,
+              paymentMethodVisual(
+                icon: method.icon,
+                logo: method.logo,
+                size: 22,
                 color: selected ? AppColors.primary : AppColors.textSecondary,
               ),
               const SizedBox(width: 12),

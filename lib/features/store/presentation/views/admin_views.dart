@@ -43,7 +43,7 @@ class CustomersView extends StatelessWidget {
     return RefreshIndicator(
       onRefresh: onLoadCustomers,
       child: ListView(
-        padding: const EdgeInsets.fromLTRB(18, 18, 18, 24),
+        padding: const EdgeInsets.fromLTRB(18, 18, 18, 24 + kBottomNavInset),
         children: [
           adminHeading(context, 'Pelanggan'),
           if (panelError != null) inlineError(panelError!),
@@ -127,7 +127,7 @@ class ReportsView extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return ListView(
-      padding: const EdgeInsets.fromLTRB(18, 18, 18, 30),
+      padding: const EdgeInsets.fromLTRB(18, 18, 18, 30 + kBottomNavInset),
       children: [
         adminHeading(context, 'Ringkasan penjualan'),
         SegmentedButton<String>(
@@ -366,7 +366,7 @@ class ShippingAdminView extends StatelessWidget {
     return RefreshIndicator(
       onRefresh: onLoadShippingConfig,
       child: ListView(
-        padding: const EdgeInsets.fromLTRB(18, 18, 18, 30),
+        padding: const EdgeInsets.fromLTRB(18, 18, 18, 30 + kBottomNavInset),
         children: [
           adminHeading(context, 'Ongkos kirim'),
           if (panelError != null) inlineError(panelError!),

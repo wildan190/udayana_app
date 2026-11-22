@@ -110,7 +110,7 @@ class OrdersView extends StatelessWidget {
         return RefreshIndicator(
           onRefresh: onReloadOrders,
           child: ListView(
-            padding: const EdgeInsets.fromLTRB(18, 18, 18, 24),
+            padding: const EdgeInsets.fromLTRB(18, 18, 18, 24 + kBottomNavInset),
             children: [
               adminHeading(context, isAdmin ? 'Kelola pesanan' : 'Pesanan saya'),
               const SizedBox(height: 4),

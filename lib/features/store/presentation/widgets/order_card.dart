@@ -56,7 +56,10 @@ class OrderCard extends StatelessWidget {
                 style: const TextStyle(fontWeight: FontWeight.w600),
               ),
             ],
-            if (isAdmin && order.paymentMethod.startsWith('MIDTRANS')) ...[
+            if (isAdmin &&
+                order.paymentMethod.startsWith('MIDTRANS') &&
+                order.status != 'cancelled' &&
+                order.status != 'cancellation_requested') ...[
               const SizedBox(height: 6),
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),

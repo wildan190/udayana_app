@@ -120,7 +120,12 @@ class CategoriesView extends StatelessWidget {
                     Icons.inventory_2_outlined,
                   )
                 : GridView.builder(
-                    padding: const EdgeInsets.fromLTRB(18, 8, 18, 24),
+                    padding: const EdgeInsets.fromLTRB(
+                      18,
+                      8,
+                      18,
+                      24 + kBottomNavInset,
+                    ),
                     itemCount: categoryProducts.length,
                     gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
                       crossAxisCount: 2,
@@ -146,7 +151,7 @@ class CategoriesView extends StatelessWidget {
     }
 
     return ListView(
-      padding: const EdgeInsets.fromLTRB(18, 18, 18, 30),
+      padding: const EdgeInsets.fromLTRB(18, 18, 18, 30 + kBottomNavInset),
       children: [
         Text(
           'Kategori Produk',

@@ -5,6 +5,7 @@ import '../../../auth/domain/entities/app_user.dart';
 import '../../../orders/domain/entities/order.dart';
 import '../../../products/domain/entities/product.dart';
 import '../widgets/product_card.dart';
+import 'view_helpers.dart';
 
 class AccountView extends StatelessWidget {
   const AccountView({
@@ -60,7 +61,7 @@ class AccountView extends StatelessWidget {
         userOrders.where((o) => o.status == 'completed').length;
 
     return ListView(
-      padding: const EdgeInsets.fromLTRB(18, 18, 18, 30),
+      padding: const EdgeInsets.fromLTRB(18, 18, 18, 30 + kBottomNavInset),
       children: [
         Card(
           child: Padding(

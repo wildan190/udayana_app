@@ -1,6 +1,19 @@
 import 'package:flutter/material.dart';
+
 import '../../../../core/theme/app_theme.dart';
 import '../../../products/domain/entities/product.dart';
+
+class AddToCartFlightNotification extends Notification {
+  const AddToCartFlightNotification({
+    required this.product,
+    required this.sourceRect,
+    required this.imageUrl,
+  });
+
+  final Product product;
+  final Rect sourceRect;
+  final String imageUrl;
+}
 
 class ProductCard extends StatelessWidget {
   const ProductCard({
@@ -159,10 +172,39 @@ class ProductCard extends StatelessWidget {
                           ),
                           minimumSize: const Size.fromHeight(36),
                         ),
-                        onPressed: product.stock == 0 ? null : onAddToCart,
+                        onPressed: product.stock == 0
+                            ? null
+                            : () {
+                                final renderObject = context.findRenderObject();
+                                if (renderObject is RenderBox &&
+                                    renderObject.hasSize) {
+                                  final topLeft = renderObject.localToGlobal(
+                                    Offset.zero,
+                                  );
+                                  final imageHeight = renderObject.size.height
+                                      .clamp(0.0, 140.0)
+                                      .toDouble();
+                                  AddToCartFlightNotification(
+                                    product: product,
+                                    sourceRect: Rect.fromLTWH(
+                                      topLeft.dx,
+                                      topLeft.dy,
+                                      renderObject.size.width,
+                                      imageHeight,
+                                    ),
+                                    imageUrl: product.imageUrl.isEmpty
+                                        ? ''
+                                        : resolvedImageUrl(product.imageUrl),
+                                  ).dispatch(context);
+                                }
+                                onAddToCart();
+                              },
                         child: const Text(
                           'Tambah',
-                          style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600),
+                          style: TextStyle(
+                            fontSize: 12.5,
+                            fontWeight: FontWeight.w600,
+                          ),
                         ),
                       ),
                     ),

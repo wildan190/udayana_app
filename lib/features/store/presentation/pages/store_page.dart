@@ -1,10 +1,11 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
-import 'package:liquid_glass_bottom_bar/liquid_glass_bottom_bar.dart';
+import 'package:liquid_glass_renderer/liquid_glass_renderer.dart';
 
 import '../../../../core/di/app_services.dart';
 import '../../../../core/native/cart_math.dart';
@@ -31,6 +32,7 @@ import '../views/home_view.dart';
 import '../views/orders_view.dart';
 import '../views/view_helpers.dart';
 import 'product_detail_page.dart';
+import '../widgets/product_card.dart';
 
 class StorePage extends StatefulWidget {
   const StorePage({super.key, required this.services, required this.user});
@@ -55,6 +57,8 @@ class _StorePageState extends State<StorePage> {
   String? _selectedCategoryInTab;
   String? _selectedHomeCategoryAll;
   final TextEditingController _searchController = TextEditingController();
+  final GlobalKey _cartIconKey = GlobalKey();
+  final Set<OverlayEntry> _cartFlightEntries = {};
   Timer? _searchDebounce;
   String _reportPeriod = 'month';
   String _reportValue = DateFormat('yyyy-MM').format(DateTime.now());
@@ -103,7 +107,9 @@ class _StorePageState extends State<StorePage> {
       _selectedDistrict = _user.district;
       _reloadOrders();
       _loadCartFromBackend();
-      WidgetsBinding.instance.addPostFrameCallback((_) => _refreshShippingQuote());
+      WidgetsBinding.instance.addPostFrameCallback(
+        (_) => _refreshShippingQuote(),
+      );
     }
     if (!_isAdmin) _loadHomeLayout();
   }
@@ -112,6 +118,11 @@ class _StorePageState extends State<StorePage> {
   void dispose() {
     _searchDebounce?.cancel();
     _searchController.dispose();
+    for (final entry in _cartFlightEntries.toList()) {
+      entry.remove();
+      entry.dispose();
+    }
+    _cartFlightEntries.clear();
     _products.dispose();
     _orders.dispose();
     super.dispose();
@@ -512,8 +523,10 @@ class _StorePageState extends State<StorePage> {
                   'udayana',
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: Theme.of(context).textTheme.titleLarge
-                      ?.copyWith(fontWeight: FontWeight.w700, letterSpacing: -0.3),
+                  style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: -0.3,
+                  ),
                 ),
               ),
             ],
@@ -563,7 +576,10 @@ class _StorePageState extends State<StorePage> {
                           ),
                         ),
                       ],
-                      const PopupMenuItem(value: 'logout', child: Text('Keluar')),
+                      const PopupMenuItem(
+                        value: 'logout',
+                        child: Text('Keluar'),
+                      ),
                     ],
                     child: Padding(
                       padding: const EdgeInsets.only(right: 14),
@@ -586,8 +602,19 @@ class _StorePageState extends State<StorePage> {
                   ),
                 ],
         ),
-        body: IndexedStack(index: _tabIndex, children: _pages),
-        bottomNavigationBar: _floatingNavBar(),
+        body: NotificationListener<AddToCartFlightNotification>(
+          onNotification: _handleAddToCartFlight,
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              IndexedStack(index: _tabIndex, children: _pages),
+              Align(
+                alignment: Alignment.bottomCenter,
+                child: _floatingNavBar(),
+              ),
+            ],
+          ),
+        ),
         floatingActionButton: _isAdmin && _tabIndex == 0
             ? FloatingActionButton(
                 onPressed: _showProductForm,
@@ -607,36 +634,201 @@ class _StorePageState extends State<StorePage> {
   Widget _floatingNavBar() {
     final icons = _navIcons;
     final activeIcons = _navActiveIcons;
-    final bottomInset = MediaQuery.of(context).padding.bottom;
-    return MediaQuery.removePadding(
-      context: context,
-      removeBottom: true,
-      child: Container(
-        margin: EdgeInsets.fromLTRB(16, 0, 16, 12 + bottomInset),
-        decoration: BoxDecoration(
-          color: const Color(0xFF0F172A).withValues(alpha: 0.62),
-          borderRadius: BorderRadius.circular(22),
-        ),
-        clipBehavior: Clip.antiAlias,
-        child: LiquidGlassBottomBar(
-          items: [
-            for (var index = 0; index < _tabs.length; index++)
-              LiquidGlassBottomBarItem(
-                icon: icons[index],
-                activeIcon: activeIcons[index],
-                label: _tabs[index],
-                badge: !_isAdmin && index == 2 && _cartCount > 0
-                    ? _cartCount
-                    : null,
+    return SafeArea(
+      top: false,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+        child: Container(
+          decoration: const BoxDecoration(
+            borderRadius: BorderRadius.all(Radius.circular(34)),
+            boxShadow: [
+              BoxShadow(
+                color: Color(0xBFFFFFFF),
+                blurRadius: 20,
+                spreadRadius: 1,
+                offset: Offset(0, 2),
               ),
-          ],
-          currentIndex: _tabIndex,
-          onTap: _selectTab,
-          activeColor: AppColors.primary,
-          margin: EdgeInsets.zero,
-          height: 68,
-          barBlurSigma: 18,
-          activeBlurSigma: 26,
+              BoxShadow(
+                color: Color(0x3888CFFF),
+                blurRadius: 16,
+                offset: Offset(0, 5),
+              ),
+            ],
+          ),
+          child: SizedBox(
+            height: 68,
+            child: Stack(
+              children: [
+                LiquidGlassLayer(
+                  settings: const LiquidGlassSettings(
+                    glassColor: Color(0x30FFFFFF),
+                    thickness: 10,
+                    blur: 0.5,
+                    chromaticAberration: 0,
+                    refractiveIndex: 1.0,
+                    lightIntensity: 0.9,
+                    ambientStrength: 0.24,
+                    saturation: 1.0,
+                  ),
+                  child: LiquidGlassBlendGroup(
+                    blend: 10,
+                    child: LayoutBuilder(
+                      builder: (context, constraints) {
+                        final slotWidth = constraints.maxWidth / _tabs.length;
+                        final dropSize = (slotWidth - 12)
+                            .clamp(44.0, 56.0)
+                            .toDouble();
+                        return Stack(
+                          children: [
+                            LiquidGlass.grouped(
+                              shape: const LiquidRoundedSuperellipse(
+                                borderRadius: 34,
+                              ),
+                              child: const SizedBox.expand(),
+                            ),
+                            AnimatedPositioned(
+                              duration: const Duration(milliseconds: 320),
+                              curve: Curves.easeOutBack,
+                              left:
+                                  slotWidth * _tabIndex +
+                                  (slotWidth - dropSize) / 2,
+                              top: (68 - dropSize) / 2,
+                              width: dropSize,
+                              height: dropSize,
+                              child: Container(
+                                decoration: const BoxDecoration(
+                                  shape: BoxShape.circle,
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: Color(0xD9FFFFFF),
+                                      blurRadius: 14,
+                                      spreadRadius: 1,
+                                    ),
+                                    BoxShadow(
+                                      color: Color(0x5588CFFF),
+                                      blurRadius: 12,
+                                      offset: Offset(0, 3),
+                                    ),
+                                  ],
+                                ),
+                                child: LiquidGlass.grouped(
+                                  shape: const LiquidOval(),
+                                  child: const SizedBox.expand(),
+                                ),
+                              ),
+                            ),
+                          ],
+                        );
+                      },
+                    ),
+                  ),
+                ),
+                Positioned.fill(
+                  child: IgnorePointer(
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(34),
+                        border: Border.all(
+                          color: AppColors.border.withValues(alpha: 0.72),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+                Row(
+                  children: [
+                    for (var index = 0; index < _tabs.length; index++)
+                      Expanded(
+                        child: _bottomNavItem(
+                          index: index,
+                          icon: icons[index],
+                          activeIcon: activeIcons[index],
+                          label: _tabs[index],
+                          badge: !_isAdmin && index == 2 && _cartCount > 0
+                              ? _cartCount
+                              : null,
+                        ),
+                      ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _bottomNavItem({
+    required int index,
+    required IconData icon,
+    required IconData activeIcon,
+    required String label,
+    int? badge,
+  }) {
+    final selected = index == _tabIndex;
+    final color = selected ? AppColors.primary : AppColors.textSecondary;
+    return Semantics(
+      button: true,
+      selected: selected,
+      label: label,
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: () => _selectTab(index),
+          customBorder: const StadiumBorder(),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Stack(
+                  key: !_isAdmin && index == 2 ? _cartIconKey : null,
+                  clipBehavior: Clip.none,
+                  children: [
+                    Icon(selected ? activeIcon : icon, size: 22, color: color),
+                    if ((badge ?? 0) > 0)
+                      Positioned(
+                        right: -8,
+                        top: -6,
+                        child: Container(
+                          constraints: const BoxConstraints(
+                            minWidth: 16,
+                            minHeight: 16,
+                          ),
+                          padding: const EdgeInsets.symmetric(horizontal: 4),
+                          alignment: Alignment.center,
+                          decoration: BoxDecoration(
+                            color: AppColors.error,
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: Text(
+                            badge! > 99 ? '99+' : '$badge',
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 9,
+                              fontWeight: FontWeight.w700,
+                              height: 1,
+                            ),
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 10,
+                    fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
+                    color: color,
+                  ),
+                ),
+              ],
+            ),
+          ),
         ),
       ),
     );
@@ -703,9 +895,8 @@ class _StorePageState extends State<StorePage> {
             children: [
               Text(
                 'Semua Metode Pembayaran',
-                style: Theme.of(sheetContext).textTheme.titleLarge?.copyWith(
-                  fontWeight: FontWeight.w700,
-                ),
+                style: Theme.of(sheetContext).textTheme.titleLarge
+                    ?.copyWith(fontWeight: FontWeight.w700),
               ),
               const SizedBox(height: 16),
               for (final method in paymentMethods)
@@ -780,8 +971,8 @@ class _StorePageState extends State<StorePage> {
 
   String get _selectedPaymentMethodValue =>
       paymentMethods.any((m) => m.value == _selectedPaymentMethod)
-          ? _selectedPaymentMethod
-          : paymentMethods.first.value;
+      ? _selectedPaymentMethod
+      : paymentMethods.first.value;
 
   PaymentMethod _methodFor(String value) => paymentMethods.firstWhere(
     (m) => m.value == value,
@@ -856,7 +1047,8 @@ class _StorePageState extends State<StorePage> {
                   ),
                   validator: (value) {
                     final parsed = double.tryParse(value?.trim() ?? '');
-                    if (parsed == null || parsed < 0) return 'Isi tarif yang valid';
+                    if (parsed == null || parsed < 0)
+                      return 'Isi tarif yang valid';
                     return null;
                   },
                 ),
@@ -933,7 +1125,9 @@ class _StorePageState extends State<StorePage> {
                         keyboardType: const TextInputType.numberWithOptions(
                           decimal: true,
                         ),
-                        decoration: const InputDecoration(labelText: 'Dari (km)'),
+                        decoration: const InputDecoration(
+                          labelText: 'Dari (km)',
+                        ),
                         validator: _numberValidator,
                       ),
                     ),
@@ -944,8 +1138,9 @@ class _StorePageState extends State<StorePage> {
                         keyboardType: const TextInputType.numberWithOptions(
                           decimal: true,
                         ),
-                        decoration:
-                            const InputDecoration(labelText: 'Sampai (km)'),
+                        decoration: const InputDecoration(
+                          labelText: 'Sampai (km)',
+                        ),
                         validator: _numberValidator,
                       ),
                     ),
@@ -1059,7 +1254,9 @@ class _StorePageState extends State<StorePage> {
               children: [
                 TextFormField(
                   controller: city,
-                  decoration: const InputDecoration(labelText: 'Kota/Kabupaten'),
+                  decoration: const InputDecoration(
+                    labelText: 'Kota/Kabupaten',
+                  ),
                   validator: (value) => (value?.trim().isEmpty ?? true)
                       ? 'Kota wajib diisi'
                       : null,
@@ -1244,6 +1441,43 @@ class _StorePageState extends State<StorePage> {
     _syncCartToBackend();
   }
 
+  bool _handleAddToCartFlight(AddToCartFlightNotification notification) {
+    final product = notification.product;
+    if (_isAdmin || (_cart[product.id] ?? 0) >= product.stock) return true;
+
+    final targetObject = _cartIconKey.currentContext?.findRenderObject();
+    final overlay = Overlay.of(context, rootOverlay: true);
+    final overlayObject = overlay.context.findRenderObject();
+    if (targetObject is! RenderBox ||
+        !targetObject.hasSize ||
+        overlayObject is! RenderBox) {
+      return true;
+    }
+
+    final start = overlayObject.globalToLocal(notification.sourceRect.center);
+    final targetGlobal = targetObject.localToGlobal(
+      targetObject.size.center(Offset.zero),
+    );
+    final end = overlayObject.globalToLocal(targetGlobal);
+
+    late final OverlayEntry entry;
+    entry = OverlayEntry(
+      builder: (_) => _CartProductFlight(
+        start: start,
+        end: end,
+        imageUrl: notification.imageUrl,
+        onComplete: () {
+          if (!_cartFlightEntries.remove(entry)) return;
+          entry.remove();
+          entry.dispose();
+        },
+      ),
+    );
+    _cartFlightEntries.add(entry);
+    overlay.insert(entry);
+    return true;
+  }
+
   void _changeQuantity(Product product, int delta) {
     setState(() {
       final next = (_cart[product.id] ?? 0) + delta;
@@ -1282,7 +1516,9 @@ class _StorePageState extends State<StorePage> {
       List<Map<String, dynamic>> addresses = [];
       try {
         final rawList = await widget.services.listAddresses();
-        addresses = rawList.map((item) => item as Map<String, dynamic>).toList();
+        addresses = rawList
+            .map((item) => item as Map<String, dynamic>)
+            .toList();
       } catch (_) {
         if (_user.hasAddress) {
           addresses = [
@@ -1299,7 +1535,7 @@ class _StorePageState extends State<StorePage> {
               'rt_rw': _user.rtRw,
               'postal_code': _user.postalCode,
               'is_default': true,
-            }
+            },
           ];
         }
       }
@@ -1361,25 +1597,28 @@ class _StorePageState extends State<StorePage> {
                         itemCount: addresses.length,
                         itemBuilder: (context, index) {
                           final addr = addresses[index];
-                          final fullAddr = [
-                            addr['address'],
-                            if (addr['rt_rw'] != null &&
-                                addr['rt_rw'].toString().isNotEmpty)
-                              'RT/RW ${addr['rt_rw']}',
-                            if (addr['subdistrict'] != null &&
-                                addr['subdistrict'].toString().isNotEmpty)
-                              'Kel. ${addr['subdistrict']}',
-                            if (addr['district'] != null &&
-                                addr['district'].toString().isNotEmpty)
-                              'Kec. ${addr['district']}',
-                            addr['city'],
-                            addr['province'],
-                            addr['postal_code'],
-                          ]
-                              .where(
-                                (s) => s != null && s.toString().isNotEmpty,
-                              )
-                              .join(', ');
+                          final fullAddr =
+                              [
+                                    addr['address'],
+                                    if (addr['rt_rw'] != null &&
+                                        addr['rt_rw'].toString().isNotEmpty)
+                                      'RT/RW ${addr['rt_rw']}',
+                                    if (addr['subdistrict'] != null &&
+                                        addr['subdistrict']
+                                            .toString()
+                                            .isNotEmpty)
+                                      'Kel. ${addr['subdistrict']}',
+                                    if (addr['district'] != null &&
+                                        addr['district'].toString().isNotEmpty)
+                                      'Kec. ${addr['district']}',
+                                    addr['city'],
+                                    addr['province'],
+                                    addr['postal_code'],
+                                  ]
+                                  .where(
+                                    (s) => s != null && s.toString().isNotEmpty,
+                                  )
+                                  .join(', ');
 
                           final isDefault = addr['is_default'] == true;
 
@@ -1451,10 +1690,9 @@ class _StorePageState extends State<StorePage> {
                                   PopupMenuButton<String>(
                                     onSelected: (val) async {
                                       if (val == 'default') {
-                                        await widget.services
-                                            .setDefaultAddress(
-                                              addr['id'] as int,
-                                            );
+                                        await widget.services.setDefaultAddress(
+                                          addr['id'] as int,
+                                        );
                                         Navigator.pop(context);
                                         await _openAddressSelectionDialog();
                                       } else if (val == 'delete') {
@@ -1669,8 +1907,9 @@ class _StorePageState extends State<StorePage> {
                   const SizedBox(height: 18),
                   DropdownButtonFormField<String>(
                     value: selectedBank,
-                    decoration:
-                        const InputDecoration(labelText: 'Nama Bank Tujuan'),
+                    decoration: const InputDecoration(
+                      labelText: 'Nama Bank Tujuan',
+                    ),
                     items: banks
                         .map(
                           (b) => DropdownMenuItem(
@@ -2018,8 +2257,7 @@ class _StorePageState extends State<StorePage> {
       resp = isQris
           ? {
               'status_message': 'Menunggu pembayaran QRIS',
-              'qr_string':
-                  '00020101021226680016ID.CO.QRIS.WWW011893600914300000000053033605802ID5910Udayana6005Bali6304',
+              'qr_string': '00020101021226680016ID.CO.QRIS.WWW011893600914300000000053033605802ID5910Udayana6005Bali6304',
             }
           : {
               'status_message': 'Menunggu pembayaran Virtual Account',
@@ -2067,10 +2305,7 @@ class _StorePageState extends State<StorePage> {
             children: [
               const Text(
                 'Nominal Pembayaran:',
-                style: TextStyle(
-                  fontSize: 12,
-                  color: AppColors.textSecondary,
-                ),
+                style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
               ),
               const SizedBox(height: 2),
               Text(
@@ -2084,10 +2319,7 @@ class _StorePageState extends State<StorePage> {
               const SizedBox(height: 12),
               const Text(
                 'Item / Barang:',
-                style: TextStyle(
-                  fontSize: 12,
-                  color: AppColors.textSecondary,
-                ),
+                style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
               ),
               const SizedBox(height: 2),
               Text(
@@ -2177,9 +2409,7 @@ class _StorePageState extends State<StorePage> {
                           final numberToCopy =
                               vaNumber ??
                               '828000${order.id.toString().padLeft(8, '0')}';
-                          Clipboard.setData(
-                            ClipboardData(text: numberToCopy),
-                          );
+                          Clipboard.setData(ClipboardData(text: numberToCopy));
                           ScaffoldMessenger.of(context).showSnackBar(
                             const SnackBar(
                               content: Text(
@@ -2239,9 +2469,7 @@ class _StorePageState extends State<StorePage> {
   Future<void> _simulatePayment(Order order) async {
     try {
       await widget.services.simulatePayment(order.id);
-      _showMessage(
-        'Simulasi pembayaran sukses untuk Pesanan #${order.id}.',
-      );
+      _showMessage('Simulasi pembayaran sukses untuk Pesanan #${order.id}.');
       await _reloadOrders();
     } on Exception catch (error) {
       _showMessage(error.toString());
@@ -2293,9 +2521,8 @@ class _StorePageState extends State<StorePage> {
                 children: [
                   Text(
                     isPaid ? 'Ajukan Pembatalan & Refund' : 'Batalkan Pesanan',
-                    style: Theme.of(
-                      context,
-                    ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800),
+                    style: Theme.of(context).textTheme.titleLarge
+                        ?.copyWith(fontWeight: FontWeight.w800),
                   ),
                   const SizedBox(height: 6),
                   Text(
@@ -2334,8 +2561,9 @@ class _StorePageState extends State<StorePage> {
                       decoration: const InputDecoration(
                         labelText: 'Tuliskan alasan pembatalan',
                       ),
-                      validator: (v) =>
-                          (v == null || v.trim().isEmpty) ? 'Alasan wajib diisi' : null,
+                      validator: (v) => (v == null || v.trim().isEmpty)
+                          ? 'Alasan wajib diisi'
+                          : null,
                     ),
                   ],
                   if (isPaid) ...[
@@ -2344,21 +2572,24 @@ class _StorePageState extends State<StorePage> {
                     const SizedBox(height: 8),
                     const Text(
                       'Informasi Rekening Bank (untuk Refund):',
-                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 13,
+                      ),
                     ),
                     const SizedBox(height: 10),
                     DropdownButtonFormField<String>(
                       value:
                           [
-                                'bca',
-                                'mandiri',
-                                'bni',
-                                'bri',
-                                'permata',
-                                'cimb',
-                              ].contains(bankCtrl.text.toLowerCase())
-                              ? bankCtrl.text.toLowerCase()
-                              : 'bca',
+                            'bca',
+                            'mandiri',
+                            'bni',
+                            'bri',
+                            'permata',
+                            'cimb',
+                          ].contains(bankCtrl.text.toLowerCase())
+                          ? bankCtrl.text.toLowerCase()
+                          : 'bca',
                       decoration: const InputDecoration(
                         labelText: 'Nama Bank Refund',
                       ),
@@ -2398,8 +2629,9 @@ class _StorePageState extends State<StorePage> {
                       decoration: const InputDecoration(
                         labelText: 'Nama Pemilik Rekening',
                       ),
-                      validator: (v) =>
-                          (v == null || v.trim().isEmpty) ? 'Wajib diisi' : null,
+                      validator: (v) => (v == null || v.trim().isEmpty)
+                          ? 'Wajib diisi'
+                          : null,
                     ),
                     const SizedBox(height: 10),
                     TextFormField(
@@ -2408,8 +2640,9 @@ class _StorePageState extends State<StorePage> {
                       decoration: const InputDecoration(
                         labelText: 'Nomor Rekening',
                       ),
-                      validator: (v) =>
-                          (v == null || v.trim().isEmpty) ? 'Wajib diisi' : null,
+                      validator: (v) => (v == null || v.trim().isEmpty)
+                          ? 'Wajib diisi'
+                          : null,
                     ),
                   ],
                   const SizedBox(height: 20),
@@ -2552,16 +2785,18 @@ class _StorePageState extends State<StorePage> {
                     Expanded(
                       child: TextFormField(
                         controller: province,
-                        decoration:
-                            const InputDecoration(labelText: 'Provinsi'),
+                        decoration: const InputDecoration(
+                          labelText: 'Provinsi',
+                        ),
                       ),
                     ),
                     const SizedBox(width: 8),
                     Expanded(
                       child: TextFormField(
                         controller: city,
-                        decoration:
-                            const InputDecoration(labelText: 'Kota/Kab'),
+                        decoration: const InputDecoration(
+                          labelText: 'Kota/Kab',
+                        ),
                       ),
                     ),
                   ],
@@ -2572,16 +2807,18 @@ class _StorePageState extends State<StorePage> {
                     Expanded(
                       child: TextFormField(
                         controller: district,
-                        decoration:
-                            const InputDecoration(labelText: 'Kecamatan'),
+                        decoration: const InputDecoration(
+                          labelText: 'Kecamatan',
+                        ),
                       ),
                     ),
                     const SizedBox(width: 8),
                     Expanded(
                       child: TextFormField(
                         controller: subdistrict,
-                        decoration:
-                            const InputDecoration(labelText: 'Kelurahan'),
+                        decoration: const InputDecoration(
+                          labelText: 'Kelurahan',
+                        ),
                       ),
                     ),
                   ],
@@ -2599,8 +2836,9 @@ class _StorePageState extends State<StorePage> {
                     Expanded(
                       child: TextFormField(
                         controller: postalCode,
-                        decoration:
-                            const InputDecoration(labelText: 'Kode Pos'),
+                        decoration: const InputDecoration(
+                          labelText: 'Kode Pos',
+                        ),
                       ),
                     ),
                   ],
@@ -2608,8 +2846,7 @@ class _StorePageState extends State<StorePage> {
                 const SizedBox(height: 12),
                 TextFormField(
                   controller: address,
-                  decoration:
-                      const InputDecoration(labelText: 'Alamat Detail'),
+                  decoration: const InputDecoration(labelText: 'Alamat Detail'),
                   maxLines: 2,
                 ),
               ],
@@ -2807,10 +3044,7 @@ class _StorePageState extends State<StorePage> {
                         ),
                         items: categories
                             .map(
-                              (c) => DropdownMenuItem(
-                                value: c,
-                                child: Text(c),
-                              ),
+                              (c) => DropdownMenuItem(value: c, child: Text(c)),
                             )
                             .toList(),
                         onChanged: (val) {
@@ -2937,21 +3171,21 @@ class _StorePageState extends State<StorePage> {
                                       if (selectedImage != null &&
                                           selectedImageBytes != null) {
                                         try {
-                                          imageUrl = await _products.uploadImage(
-                                            selectedImage!.name,
-                                            selectedImageBytes!,
-                                          );
+                                          imageUrl = await _products
+                                              .uploadImage(
+                                                selectedImage!.name,
+                                                selectedImageBytes!,
+                                              );
                                         } catch (_) {
                                           if (context.mounted) {
-                                            ScaffoldMessenger.of(
-                                              context,
-                                            ).showSnackBar(
-                                              const SnackBar(
-                                                content: Text(
-                                                  'Gagal unggah foto ke S3. Menyimpan produk tanpa foto.',
-                                                ),
-                                              ),
-                                            );
+                                            ScaffoldMessenger.of(context)
+                                                .showSnackBar(
+                                                  const SnackBar(
+                                                    content: Text(
+                                                      'Gagal unggah foto ke S3. Menyimpan produk tanpa foto.',
+                                                    ),
+                                                  ),
+                                                );
                                           }
                                           imageUrl = product?.imageUrl ?? '';
                                         }
@@ -3104,7 +3338,9 @@ class _StorePageState extends State<StorePage> {
             _addToCart(product);
             ScaffoldMessenger.of(pageContext).showSnackBar(
               SnackBar(
-                content: Text('${product.name} berhasil ditambahkan ke keranjang.'),
+                content: Text(
+                  '${product.name} berhasil ditambahkan ke keranjang.',
+                ),
                 duration: const Duration(seconds: 2),
                 action: SnackBarAction(
                   label: 'Keranjang',
@@ -3208,5 +3444,79 @@ class _StorePageState extends State<StorePage> {
     _category = 'Semua';
     _categoryFilter = '';
     _needTypeFilter = '';
+  }
+}
+
+class _CartProductFlight extends StatelessWidget {
+  const _CartProductFlight({
+    required this.start,
+    required this.end,
+    required this.imageUrl,
+    required this.onComplete,
+  });
+
+  final Offset start;
+  final Offset end;
+  final String imageUrl;
+  final VoidCallback onComplete;
+
+  @override
+  Widget build(BuildContext context) {
+    return TweenAnimationBuilder<double>(
+      tween: Tween(begin: 0, end: 1),
+      duration: const Duration(milliseconds: 680),
+      curve: Curves.easeInCubic,
+      onEnd: onComplete,
+      builder: (context, progress, child) {
+        final point =
+            Offset.lerp(start, end, progress)! -
+            Offset(0, math.sin(math.pi * progress) * 72);
+        final size = 64 - (44 * progress);
+        return Positioned(
+          left: point.dx - size / 2,
+          top: point.dy - size / 2,
+          width: size,
+          height: size,
+          child: Transform.rotate(
+            angle: math.pi * 0.35 * progress,
+            child: Container(
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(12),
+                boxShadow: const [
+                  BoxShadow(
+                    color: Color(0x40000000),
+                    blurRadius: 12,
+                    offset: Offset(0, 5),
+                  ),
+                ],
+              ),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(12),
+                child: imageUrl.isEmpty
+                    ? const ColoredBox(
+                        color: AppColors.primaryBg,
+                        child: Icon(
+                          Icons.shopping_bag_outlined,
+                          color: AppColors.primary,
+                        ),
+                      )
+                    : Image.network(
+                        imageUrl,
+                        fit: BoxFit.cover,
+                        errorBuilder: (_, _, _) => const ColoredBox(
+                          color: AppColors.primaryBg,
+                          child: Icon(
+                            Icons.shopping_bag_outlined,
+                            color: AppColors.primary,
+                          ),
+                        ),
+                      ),
+              ),
+            ),
+          ),
+        );
+      },
+    );
   }
 }

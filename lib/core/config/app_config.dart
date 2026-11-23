@@ -24,7 +24,7 @@ class AppConfig {
       : _devNgrokBaseUrl;
 
   static const _devNgrokBaseUrl =
-      'https://fa83-2404-c0-aa07-678c-adf4-193d-b053-4515.ngrok-free.app/api/v1';
+      'https://api-phoestore.phoenixtech.web.id/api/v1';
   static const _devLocalBaseUrl = 'http://127.0.0.1:8080/api/v1';
   static const _prodBaseUrl = 'https://api-phoestore.phoenixtech.web.id/api/v1';
 }

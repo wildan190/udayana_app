@@ -2,8 +2,8 @@ import 'package:flutter/material.dart';
 
 import '../../../../core/di/app_services.dart';
 import '../../../../core/theme/app_theme.dart';
+import '../../../store/presentation/pages/settings_page.dart';
 import '../../domain/entities/app_user.dart';
-import 'change_password_page.dart';
 
 class ProfilePage extends StatefulWidget {
   const ProfilePage({super.key, required this.services, required this.user});
@@ -24,13 +24,16 @@ class _ProfilePageState extends State<ProfilePage> {
     _currentUser = widget.user;
   }
 
-  Future<void> _openChangePassword(BuildContext context) async {
-    await Navigator.push<bool>(
+  Future<void> _openSettings(BuildContext context) async {
+    final deleted = await Navigator.push<bool>(
       context,
       MaterialPageRoute<bool>(
-        builder: (_) => ChangePasswordPage(services: widget.services),
+        builder: (_) => SettingsPage(services: widget.services, user: _currentUser),
       ),
     );
+    if (deleted == true && mounted) {
+      Navigator.pop(context, true);
+    }
   }
 
   Future<void> _openEditBankAccount() async {
@@ -179,6 +182,7 @@ class _ProfilePageState extends State<ProfilePage> {
           bankName: bankName.text.trim(),
           accountName: accountName.text.trim(),
           accountNumber: accountNumber.text.trim(),
+          is2FAEnabled: _currentUser.is2FAEnabled,
         );
       });
       ScaffoldMessenger.of(context).showSnackBar(
@@ -195,7 +199,16 @@ class _ProfilePageState extends State<ProfilePage> {
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
     return Scaffold(
-      appBar: AppBar(title: const Text('Profil Saya')),
+      appBar: AppBar(
+        title: const Text('Profil Saya'),
+        actions: [
+          IconButton(
+            tooltip: 'Pengaturan Aplikasi',
+            onPressed: () => _openSettings(context),
+            icon: const Icon(Icons.settings_outlined),
+          ),
+        ],
+      ),
       body: SafeArea(
         child: ListView(
           padding: const EdgeInsets.all(20),
@@ -372,14 +385,18 @@ class _ProfilePageState extends State<ProfilePage> {
                 ),
               ),
             ),
-            const SizedBox(height: 24),
-            OutlinedButton.icon(
-              style: OutlinedButton.styleFrom(
-                padding: const EdgeInsets.symmetric(vertical: 14),
+            const SizedBox(height: 20),
+            Card(
+              child: ListTile(
+                leading: const Icon(Icons.settings_outlined, color: AppColors.primary),
+                title: const Text(
+                  'Pengaturan Aplikasi',
+                  style: TextStyle(fontWeight: FontWeight.w700),
+                ),
+                subtitle: const Text('Keamanan 2FA, Optimalisasi Baterai, & Tentang Kami'),
+                trailing: const Icon(Icons.chevron_right_rounded),
+                onTap: () => _openSettings(context),
               ),
-              onPressed: () => _openChangePassword(context),
-              icon: const Icon(Icons.lock_reset_rounded),
-              label: const Text('Ganti Kata Sandi'),
             ),
           ],
         ),

@@ -17,5 +17,6 @@ class UserMapper {
     rtRw: model.rtRw,
     postalCode: model.postalCode,
     address: model.address,
+    is2FAEnabled: model.is2FAEnabled,
   );
 }

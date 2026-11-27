@@ -125,6 +125,7 @@ class OrderCard extends StatelessWidget {
               maxLines: 2,
               overflow: TextOverflow.ellipsis,
             ),
+            _buildOrderProgressTimeline(order.status),
             if (!isAdmin &&
                 order.paymentMethod.toUpperCase().contains('MIDTRANS') &&
                 order.status == 'pending') ...[
@@ -369,6 +370,100 @@ class OrderCard extends StatelessWidget {
           fontSize: 11,
           fontWeight: FontWeight.w600,
         ),
+      ),
+    );
+  }
+
+  Widget _buildOrderProgressTimeline(String status) {
+    if (status == 'cancelled' || status == 'cancellation_requested') {
+      return const SizedBox.shrink();
+    }
+
+    int currentStep;
+    switch (status) {
+      case 'processing':
+        currentStep = 1;
+        break;
+      case 'shipping':
+        currentStep = 2;
+        break;
+      case 'completed':
+        currentStep = 3;
+        break;
+      default:
+        currentStep = 0;
+    }
+
+    final steps = ['Diterima', 'Diproses', 'Dikirim', 'Selesai'];
+
+    return Container(
+      margin: const EdgeInsets.symmetric(vertical: 10),
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: AppColors.fill,
+        borderRadius: AppRadius.cardAll,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Progres Pesanan:',
+            style: TextStyle(
+              fontSize: 11.5,
+              fontWeight: FontWeight.w700,
+              color: AppColors.textSecondary,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: List.generate(steps.length, (index) {
+              final isPassed = index <= currentStep;
+              final isCurrent = index == currentStep;
+              final isLast = index == steps.length - 1;
+
+              return Expanded(
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Column(
+                        children: [
+                          CircleAvatar(
+                            radius: isCurrent ? 10 : 8,
+                            backgroundColor: isPassed
+                                ? (isCurrent ? AppColors.primary : AppColors.success)
+                                : AppColors.border,
+                            child: Icon(
+                              isPassed ? Icons.check : Icons.circle,
+                              size: isCurrent ? 11 : 7,
+                              color: isPassed ? Colors.white : AppColors.textTertiary,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            steps[index],
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              fontSize: 9.5,
+                              fontWeight: isCurrent ? FontWeight.bold : FontWeight.normal,
+                              color: isPassed ? AppColors.textPrimary : AppColors.textTertiary,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    if (!isLast)
+                      Expanded(
+                        child: Container(
+                          height: 2,
+                          color: index < currentStep ? AppColors.success : AppColors.border,
+                        ),
+                      ),
+                  ],
+                ),
+              );
+            }),
+          ),
+        ],
       ),
     );
   }

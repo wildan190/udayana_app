@@ -4,9 +4,10 @@ import 'package:flutter/material.dart';
 import '../../../../core/di/app_services.dart';
 import '../../../../core/network/session_storage.dart';
 import '../../../../core/theme/app_theme.dart';
+import '../../data/mappers/user_mapper.dart';
+import '../../data/models/user_model.dart';
 import '../../domain/repositories/auth_repository.dart';
 import '../state/auth_controller.dart';
-import '../state/auth_event.dart';
 import '../state/auth_state.dart';
 import 'register_page.dart';
 
@@ -56,15 +57,131 @@ class _LoginPageState extends State<LoginPage> {
   }
 
   Future<void> _signIn() async {
-    await _controller.dispatch(
-      SignInRequested(email: _email.text, password: _password.text),
-    );
-    if (!mounted) return;
-    final session = _controller.state.session;
-    if (session != null) {
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      final response = await widget.services.api.post(
+        '/auth/login',
+        body: {'email': _email.text.trim(), 'password': _password.text},
+      ) as Map<String, dynamic>;
+
+      if (response['requires_otp'] == true) {
+        final userId = (response['user_id'] as num).toInt();
+        final email = response['email'] as String? ?? _email.text;
+
+        if (!mounted) return;
+        await _showOtpDialog(context, email, userId);
+        return;
+      }
+
+      final user = UserModel.fromJson(response['user'] as Map<String, dynamic>);
+      final token = response['token'] as String;
+      final session = AuthSession(user: UserMapper.toEntity(user), token: token);
+      widget.services.api.token = token;
+
       if (_rememberMe) {
         await SessionStorage.save(token: session.token, user: session.user);
       }
+      if (!mounted) return;
+      Navigator.pop(context, session);
+    } on Exception catch (e) {
+      if (!mounted) return;
+      messenger.showSnackBar(
+        SnackBar(content: Text('Gagal masuk: $e')),
+      );
+    }
+  }
+
+  Future<void> _showOtpDialog(BuildContext context, String email, int userId) async {
+    final otpController = TextEditingController();
+    final backupController = TextEditingController();
+    var useBackupCode = false;
+
+    final session = await showDialog<AuthSession>(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setState) => AlertDialog(
+          title: Text(useBackupCode ? 'Gunakan Kode Cadangan' : 'Verifikasi 2 Langkah (2FA)'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                useBackupCode
+                    ? 'Masukkan salah satu kode cadangan 8-karakter Anda (format: UDA-XXXX-YYYY).'
+                    : 'Kode OTP verifikasi telah dikirim ke email Anda:\n$email',
+                style: const TextStyle(fontSize: 13, color: AppColors.textSecondary),
+              ),
+              const SizedBox(height: 16),
+              if (!useBackupCode)
+                TextField(
+                  controller: otpController,
+                  keyboardType: TextInputType.number,
+                  maxLength: 6,
+                  decoration: const InputDecoration(
+                    labelText: 'Masukkan 6 Digit OTP',
+                    counterText: '',
+                  ),
+                )
+              else
+                TextField(
+                  controller: backupController,
+                  decoration: const InputDecoration(
+                    labelText: 'Masukkan Kode Cadangan',
+                  ),
+                ),
+              const SizedBox(height: 12),
+              TextButton(
+                onPressed: () {
+                  setState(() {
+                    useBackupCode = !useBackupCode;
+                  });
+                },
+                child: Text(
+                  useBackupCode ? '← Masukkan Kode OTP Email' : 'Gunakan Kode Cadangan?',
+                  style: const TextStyle(color: AppColors.primary),
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Batal'),
+            ),
+            FilledButton(
+              onPressed: () async {
+                try {
+                  AuthSession sess;
+                  if (useBackupCode) {
+                    final code = backupController.text.trim();
+                    if (code.isEmpty) return;
+                    sess = await widget.services.verifyBackupCode(userId: userId, backupCode: code);
+                  } else {
+                    final otp = otpController.text.trim();
+                    if (otp.isEmpty) return;
+                    sess = await widget.services.verifyOtp(userId: userId, otp: otp);
+                  }
+                  if (!context.mounted) return;
+                  Navigator.pop(context, sess);
+                } on Exception catch (e) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text('Verifikasi gagal: $e')),
+                  );
+                }
+              },
+              child: const Text('Verifikasi'),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    if (session != null && mounted) {
+      if (_rememberMe) {
+        await SessionStorage.save(token: session.token, user: session.user);
+      }
+      if (!mounted) return;
       Navigator.pop(context, session);
     }
   }

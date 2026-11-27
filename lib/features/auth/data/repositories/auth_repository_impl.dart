@@ -80,6 +80,28 @@ class AuthRepositoryImpl implements AuthRepository {
   );
 
   @override
+  Future<void> deleteAccount() => _remoteDataSource.deleteAccount();
+
+  @override
+  Future<AuthSession> verifyOtp({required int userId, required String otp}) async {
+    final response = await _remoteDataSource.verifyOtp(userId: userId, otp: otp);
+    return _sessionFrom(response);
+  }
+
+  @override
+  Future<AuthSession> verifyBackupCode({required int userId, required String backupCode}) async {
+    final response = await _remoteDataSource.verifyBackupCode(userId: userId, backupCode: backupCode);
+    return _sessionFrom(response);
+  }
+
+  @override
+  Future<List<String>> toggle2fa({required bool enabled}) =>
+      _remoteDataSource.toggle2fa(enabled: enabled);
+
+  @override
+  Future<List<String>> getBackupCodes() => _remoteDataSource.getBackupCodes();
+
+  @override
   Future<Map<int, int>> getCart() async {
     final response = await _remoteDataSource.getCart();
     final list = response['items'] as List<dynamic>? ?? [];

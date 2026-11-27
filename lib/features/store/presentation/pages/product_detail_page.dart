@@ -50,13 +50,16 @@ class ProductDetailPage extends StatelessWidget {
                         color: AppColors.primary,
                         size: 64,
                       )
-                    : Image.network(
-                        imageUrl,
-                        fit: BoxFit.cover,
-                        errorBuilder: (_, _, _) => const Icon(
-                          Icons.broken_image_outlined,
-                          color: AppColors.textTertiary,
-                          size: 56,
+                    : Padding(
+                        padding: const EdgeInsets.all(12),
+                        child: Image.network(
+                          imageUrl,
+                          fit: BoxFit.contain,
+                          errorBuilder: (_, _, _) => const Icon(
+                            Icons.broken_image_outlined,
+                            color: AppColors.textTertiary,
+                            size: 56,
+                          ),
                         ),
                       ),
               ),

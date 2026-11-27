@@ -15,6 +15,7 @@ class AppUser {
     this.bankName = '',
     this.accountName = '',
     this.accountNumber = '',
+    this.is2FAEnabled = false,
   });
 
   final int id;
@@ -32,6 +33,7 @@ class AppUser {
   final String bankName;
   final String accountName;
   final String accountNumber;
+  final bool is2FAEnabled;
 
   bool get isAdmin => role == 'admin';
 

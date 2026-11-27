@@ -1493,12 +1493,15 @@ class _StorePageState extends State<StorePage> {
   }
 
   Future<void> _openProfile() async {
-    await Navigator.push<void>(
+    final deleted = await Navigator.push<bool>(
       context,
-      MaterialPageRoute<void>(
+      MaterialPageRoute<bool>(
         builder: (_) => ProfilePage(services: widget.services, user: _user),
       ),
     );
+    if (deleted == true && mounted) {
+      await _signOut();
+    }
   }
 
   Future<void> _openAddressDialog() async {

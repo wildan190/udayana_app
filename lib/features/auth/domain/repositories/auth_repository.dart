@@ -35,6 +35,11 @@ abstract interface class AuthRepository {
     required String currentPassword,
     required String newPassword,
   });
+  Future<void> deleteAccount();
+  Future<AuthSession> verifyOtp({required int userId, required String otp});
+  Future<AuthSession> verifyBackupCode({required int userId, required String backupCode});
+  Future<List<String>> toggle2fa({required bool enabled});
+  Future<List<String>> getBackupCodes();
   Future<Map<int, int>> getCart();
   Future<void> saveCart(Map<int, int> cart);
 }

@@ -28,6 +28,11 @@ abstract interface class AuthRemoteDataSource {
     required String currentPassword,
     required String newPassword,
   });
+  Future<void> deleteAccount();
+  Future<Map<String, dynamic>> verifyOtp({required int userId, required String otp});
+  Future<Map<String, dynamic>> verifyBackupCode({required int userId, required String backupCode});
+  Future<List<String>> toggle2fa({required bool enabled});
+  Future<List<String>> getBackupCodes();
   Future<Map<String, dynamic>> getCart();
   Future<void> saveCart(Map<int, int> cart);
 }
@@ -116,6 +121,43 @@ class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
         'new_password': newPassword,
       },
     );
+  }
+
+  @override
+  Future<void> deleteAccount() async {
+    await _api.delete('/buyer/account');
+  }
+
+  @override
+  Future<Map<String, dynamic>> verifyOtp({required int userId, required String otp}) async {
+    final response = await _api.post(
+      '/auth/verify-otp',
+      body: {'user_id': userId, 'otp': otp},
+    );
+    return response as Map<String, dynamic>;
+  }
+
+  @override
+  Future<Map<String, dynamic>> verifyBackupCode({required int userId, required String backupCode}) async {
+    final response = await _api.post(
+      '/auth/verify-backup-code',
+      body: {'user_id': userId, 'backup_code': backupCode},
+    );
+    return response as Map<String, dynamic>;
+  }
+
+  @override
+  Future<List<String>> toggle2fa({required bool enabled}) async {
+    final response = await _api.put('/buyer/2fa', body: {'enabled': enabled}) as Map<String, dynamic>;
+    final list = response['backup_codes'] as List<dynamic>? ?? [];
+    return list.map((e) => e.toString()).toList();
+  }
+
+  @override
+  Future<List<String>> getBackupCodes() async {
+    final response = await _api.get('/buyer/2fa/backup-codes') as Map<String, dynamic>;
+    final list = response['backup_codes'] as List<dynamic>? ?? [];
+    return list.map((e) => e.toString()).toList();
   }
 
   @override

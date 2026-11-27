@@ -12,6 +12,7 @@ class UserModel {
     this.rtRw = '',
     this.postalCode = '',
     this.address = '',
+    this.is2FAEnabled = false,
   });
 
   final int id;
@@ -26,6 +27,7 @@ class UserModel {
   final String rtRw;
   final String postalCode;
   final String address;
+  final bool is2FAEnabled;
 
   factory UserModel.fromJson(Map<String, dynamic> json) => UserModel(
     id: (json['id'] as num).toInt(),
@@ -40,5 +42,6 @@ class UserModel {
     rtRw: json['rt_rw'] as String? ?? '',
     postalCode: json['postal_code'] as String? ?? '',
     address: json['address'] as String? ?? '',
+    is2FAEnabled: json['is_2fa_enabled'] as bool? ?? false,
   );
 }

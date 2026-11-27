@@ -13,7 +13,7 @@
 }
 
 # Keep App Models & Classes
--keep class com.phoenixtech.udayana.** { *; }
+-keep class com.udayana_store.** { *; }
 
 # Don't warn on play services / androidx
 -dontwarn android.support.**

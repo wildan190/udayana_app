@@ -58,8 +58,7 @@ class OrderCard extends StatelessWidget {
             ],
             if (isAdmin &&
                 order.paymentMethod.startsWith('MIDTRANS') &&
-                order.status != 'cancelled' &&
-                order.status != 'cancellation_requested') ...[
+                order.status != 'cancelled') ...[
               const SizedBox(height: 6),
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
@@ -160,7 +159,11 @@ class OrderCard extends StatelessWidget {
                 ),
                 onPressed: onRequestCancellation,
                 icon: const Icon(Icons.cancel_outlined, size: 16),
-                label: const Text('Batalkan Pesanan & Refund'),
+                label: Text(
+                  order.status == 'processing'
+                      ? 'Batalkan Pesanan & Refund'
+                      : 'Batalkan Pesanan',
+                ),
               ),
             ],
             if (!isAdmin && order.status == 'cancellation_requested') ...[
@@ -174,9 +177,11 @@ class OrderCard extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text(
-                      'Permintaan pembatalan & refund sedang menunggu persetujuan admin.',
-                      style: TextStyle(
+                    Text(
+                      order.refundAccountNumber.isNotEmpty
+                          ? 'Permintaan pembatalan & refund sedang menunggu persetujuan admin.'
+                          : 'Permintaan pembatalan pesanan sedang menunggu persetujuan admin.',
+                      style: const TextStyle(
                         fontSize: 12,
                         color: Colors.orange,
                         fontWeight: FontWeight.bold,
@@ -209,10 +214,20 @@ class OrderCard extends StatelessWidget {
                       'Alasan Batal: ${order.cancellationReason.isNotEmpty ? order.cancellationReason : "-"}',
                       style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
                     ),
+                    const SizedBox(height: 4),
                     if (order.refundAccountNumber.isNotEmpty)
                       Text(
                         'Rekening Refund: ${order.refundBankName.toUpperCase()} - ${order.refundAccountNumber} a.n. ${order.refundAccountName}',
                         style: const TextStyle(fontSize: 12, color: AppColors.textSecondary),
+                      )
+                    else
+                      const Text(
+                        'Status Pembayaran: Belum Bayar (Tanpa Refund Dana)',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Colors.deepOrange,
+                          fontWeight: FontWeight.w600,
+                        ),
                       ),
                   ],
                 ),
@@ -227,14 +242,18 @@ class OrderCard extends StatelessWidget {
                         foregroundColor: Colors.white,
                       ),
                       onPressed: onApproveCancellation,
-                      child: const Text('Setujui Batal & Refund (IRIS)'),
+                      child: Text(
+                        order.refundAccountNumber.isNotEmpty
+                            ? 'Setujui Batal & Refund (IRIS)'
+                            : 'Setujui Pembatalan Pesanan',
+                      ),
                     ),
                   ),
                   const SizedBox(width: 8),
                   Expanded(
                     child: OutlinedButton(
                       onPressed: onRejectCancellation,
-                      child: const Text('Tolak'),
+                      child: const Text('Tolak Pengajuan'),
                     ),
                   ),
                 ],

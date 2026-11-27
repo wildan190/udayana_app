@@ -2693,7 +2693,7 @@ class _StorePageState extends State<StorePage> {
       _showMessage(
         isPaid
             ? 'Pengajuan pembatalan & refund terkirim. Menunggu persetujuan admin.'
-            : 'Pesanan berhasil diajukan pembatalan.',
+            : 'Pesanan berhasil dibatalkan.',
       );
       await _reloadOrders();
     }
@@ -2701,9 +2701,13 @@ class _StorePageState extends State<StorePage> {
 
   Future<void> _approveCancellation(int orderId) async {
     try {
+      final order = _orders.state.orders.where((o) => o.id == orderId).firstOrNull;
+      final hasRefund = order != null && order.refundAccountNumber.isNotEmpty;
       await widget.services.approveCancellation(orderId);
       _showMessage(
-        'Pembatalan disetujui & dana dikembalikan otomatis via Midtrans IRIS.',
+        hasRefund
+            ? 'Pembatalan disetujui & dana dikembalikan otomatis via Midtrans IRIS.'
+            : 'Pembatalan pesanan berhasil disetujui.',
       );
       await _reloadOrders();
     } on Exception catch (error) {
